@@ -333,7 +333,12 @@ class RuleStoreBridgeProvider : ContentProvider() {
             store.save(packageName, uid, existing.volumePercent, target)
             // 规则保存后必须广播通知被注入进程同步设备，否则 SystemUI 面板改了设备
             // 不会实时同步，要等到打开 App 音量管理时才会触发 publishAll。
-            PreferredDeviceSync.publish(context!!, uid, target)
+            PreferredDeviceSync.publish(
+                context!!,
+                uid,
+                target,
+                playbackSource.currentSystemDevice()
+            )
         } finally {
             removeObserver()
         }

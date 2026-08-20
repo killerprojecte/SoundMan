@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import com.highcapable.kavaref.extension.classOf
 import com.highcapable.yukihookapi.hook.factory.prefs
 import hk.uwu.soundman.log.AppLog
 import hk.uwu.soundman.model.AppAudioRule
@@ -292,9 +293,16 @@ object PreferredDeviceSync {
      * 解析、写入模块 prefs，并广播给被注入进程。
      *
      * 匹配失败打日志并抛出，不得默默写成 FollowSystem。
+     *
+     * @param systemDevice 系统当前 MEDIA 输出设备，用于 allocate 伪装判断
      */
-    fun publish(context: Context, uid: Int, target: OutputTarget) {
-        val audioManager = context.getSystemService(AudioManager::class.java)
+    fun publish(
+        context: Context,
+        uid: Int,
+        target: OutputTarget,
+        systemDevice: DeviceSpec? = null
+    ) {
+        val audioManager = context.getSystemService(classOf<AudioManager>())
             ?: error("AudioManager unavailable while publishing preferred device uid=$uid")
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { device ->
             PublicDevice(
@@ -314,14 +322,20 @@ object PreferredDeviceSync {
                     "address=${hint.address.ifEmpty { "<empty>" }} target=$target",
         )
         persist(context, hint)
-        rebroadcastAllocated(context)
+        rebroadcastAllocated(context, systemDevice)
     }
 
     /**
      * 把已持久化规则按设备重新分配 usage 后广播。单条失败只打日志。
+     *
+     * @param systemDevice 系统当前 MEDIA 输出设备，用于 allocate 伪装判断
      */
-    fun publishAll(context: Context, rules: Collection<AppAudioRule>) {
-        val audioManager = context.getSystemService(AudioManager::class.java)
+    fun publishAll(
+        context: Context,
+        rules: Collection<AppAudioRule>,
+        systemDevice: DeviceSpec? = null
+    ) {
+        val audioManager = context.getSystemService(classOf<AudioManager>())
             ?: error("AudioManager unavailable while publishing preferred devices")
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { device ->
             PublicDevice(
@@ -348,14 +362,17 @@ object PreferredDeviceSync {
                 AppLog.error("[route] persist failed uid=${rule.uid}", error)
             }
         }
-        rebroadcastAllocated(context)
+        rebroadcastAllocated(context, systemDevice)
     }
 
     /**
      * 读取当前全部 uid 提示，按设备分配 usage 后全部重播。
+     *
+     * @param systemDevice 系统当前 MEDIA 输出设备，用于 allocate 伪装判断
      */
-    fun rebroadcastAllocated(context: Context) {
-        val allocated = PreferredDeviceUsage.withAllocatedUsages(loadStoredHints(context))
+    fun rebroadcastAllocated(context: Context, systemDevice: DeviceSpec? = null) {
+        val allocated =
+            PreferredDeviceUsage.withAllocatedUsages(loadStoredHints(context), systemDevice)
         AppLog.info(
             "[route] rebroadcast count=${allocated.size} ${PreferredDeviceUsage.describe(allocated)}",
         )
@@ -387,9 +404,13 @@ object PreferredDeviceSync {
      * 动机：开机后模块 App 不会自动起来，广播到不了。各进程必须自己读 prefs、
      * 按全量 hint 重算 usage，才能在第一支 Track 构造前改掉 MUSIC Mix。
      */
-    fun allocatedHintForUid(entries: Map<String, *>, uid: Int): RouteHint? {
+    fun allocatedHintForUid(
+        entries: Map<String, *>,
+        uid: Int,
+        systemDevice: DeviceSpec? = null
+    ): RouteHint? {
         require(uid >= 0) { "uid must be non-negative" }
-        return PreferredDeviceUsage.withAllocatedUsages(hintsFromEntries(entries))
+        return PreferredDeviceUsage.withAllocatedUsages(hintsFromEntries(entries), systemDevice)
             .firstOrNull { hint -> hint.uid == uid }
     }
 

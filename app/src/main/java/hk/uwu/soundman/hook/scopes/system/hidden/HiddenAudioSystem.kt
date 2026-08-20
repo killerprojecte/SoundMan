@@ -20,6 +20,7 @@ class HiddenAudioSystem(
 ) {
     private val audioSystemClass: Class<*> = loadClass(classLoader, className)
     private val getDeviceConnectionState: Method
+    private val getDevicesForStream: Method
     private val setUidDeviceAffinities: Method
     private val removeUidDeviceAffinities: Method
     private val adapterGetDefault: Method?
@@ -63,6 +64,11 @@ class HiddenAudioSystem(
             METHOD_GET_DEVICE_CONNECTION_STATE,
             Int::class.javaPrimitiveType!!,
             String::class.java,
+        )
+        getDevicesForStream = resolveMethod(
+            audioSystemClass,
+            METHOD_GET_DEVICES_FOR_STREAM,
+            Int::class.javaPrimitiveType!!,
         )
         setUidDeviceAffinities = resolveMethod(
             audioSystemClass,
@@ -127,6 +133,18 @@ class HiddenAudioSystem(
         invokeStaticInt(getDeviceConnectionState, device, deviceAddress)
 
     /**
+     * 查询指定 stream 当前实际路由到的设备 bitmask。
+     *
+     * 动机：用户可以在系统设置中选择输出设备（如连接了蓝牙但选择扬声器），
+     * 不能假设优先级。必须查询 AudioPolicy 的实际路由结果。
+     *
+     * @param streamType legacy stream type，如 [STREAM_MUSIC]
+     * @return `DEVICE_OUT_*` 的 bitmask
+     */
+    fun getDevicesForStream(streamType: Int): Int =
+        invokeStaticInt(getDevicesForStream, streamType)
+
+    /**
      * 为 uid 绑定一组内部输出设备。仅供诊断/单测，不是改道主路径。
      */
     fun setUidDeviceAffinities(uid: Int, deviceIds: IntArray, deviceAddresses: Array<String>): Int {
@@ -175,6 +193,7 @@ class HiddenAudioSystem(
         const val FIELD_DEVICE_OUT_BLE_SPEAKER = "DEVICE_OUT_BLE_SPEAKER"
         const val FIELD_DEVICE_OUT_BLE_BROADCAST = "DEVICE_OUT_BLE_BROADCAST"
         const val METHOD_GET_DEVICE_CONNECTION_STATE = "getDeviceConnectionState"
+        const val METHOD_GET_DEVICES_FOR_STREAM = "getDevicesForStream"
         const val METHOD_SET_UID_DEVICE_AFFINITIES = "setUidDeviceAffinities"
         const val METHOD_REMOVE_UID_DEVICE_AFFINITIES = "removeUidDeviceAffinities"
 

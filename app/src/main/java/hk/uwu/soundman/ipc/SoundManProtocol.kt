@@ -14,7 +14,7 @@ import hk.uwu.soundman.model.OutputTarget
 
 /** Versioned Binder protocol shared by the app and the system_server host. */
 object SoundManProtocol {
-    const val VERSION = 3
+    const val VERSION = 4
     const val PACKAGE_NAME = "hk.uwu.soundman"
     const val HOST_PACKAGE_NAME = "android"
     const val CONTROL_PERMISSION = "$PACKAGE_NAME.permission.CONTROL_HOST"
@@ -59,6 +59,7 @@ object SoundManProtocol {
     private const val KEY_DEVICE_CATEGORY = "deviceCategory"
     private const val KEY_DEVICE_NAME = "deviceName"
     private const val KEY_FOLLOW_SYSTEM = "followSystem"
+    private const val KEY_SYSTEM_MEDIA_DEVICE = "systemMediaDevice"
     private const val MAX_ROUTE_CANDIDATES = 32
 
     data class PlaybackEntry(val uid: Int, val packageName: String, val count: Int) {
@@ -73,6 +74,7 @@ object SoundManProtocol {
         val revision: Long,
         val playback: List<PlaybackEntry>,
         val outputDevices: List<AudioOutputDevice>,
+        val systemMediaDevice: AudioOutputDevice? = null,
     ) {
         init {
             require(revision >= 0L) { "snapshot revision must not be negative" }
@@ -307,6 +309,9 @@ object SoundManProtocol {
         putStringArray(KEY_PLAYBACK_PACKAGES, snapshot.playback.map(PlaybackEntry::packageName).toTypedArray())
         putIntArray(KEY_PLAYBACK_COUNTS, snapshot.playback.map(PlaybackEntry::count).toIntArray())
         putParcelableArrayList(KEY_OUTPUT_DEVICES, ArrayList(snapshot.outputDevices.map(::encodeDevice)))
+        if (snapshot.systemMediaDevice != null) {
+            putBundle(KEY_SYSTEM_MEDIA_DEVICE, encodeDevice(snapshot.systemMediaDevice))
+        }
     }
 
     fun decodeSnapshot(bundle: Bundle): Snapshot {
@@ -316,10 +321,12 @@ object SoundManProtocol {
         val counts = bundle.requiredIntArray(KEY_PLAYBACK_COUNTS)
         require(uids.size == packages.size && uids.size == counts.size) { "playback arrays have different lengths" }
         val devices = bundle.requiredBundleList(KEY_OUTPUT_DEVICES).map(::decodeDevice)
+        val systemDevice = bundle.getBundle(KEY_SYSTEM_MEDIA_DEVICE)?.let(::decodeDevice)
         return Snapshot(
             revision = bundle.requiredLong(KEY_REVISION),
             playback = uids.indices.map { PlaybackEntry(uids[it], packages[it], counts[it]) },
             outputDevices = devices,
+            systemMediaDevice = systemDevice,
         )
     }
 

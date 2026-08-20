@@ -69,4 +69,38 @@ class HiddenPlayerAccessTest {
             player.setVolume(0.1f)
         })
     }
+
+    @Test
+    fun setVolumeThrowsPlayerDeadExceptionWhenBinderIsDead() {
+        val fakePlayer = FakePlayer()
+        fakePlayer.throwDeadObjectOnSetVolume = true
+        val access = HiddenPlayerAccess(FakePlayerIdCard::class.java)
+        val player = access.fromPlayerIdCard(FakePlayerIdCard(fakePlayer))
+            ?: error("expected HiddenPlayer")
+        assertThrows(PlayerDeadException::class.java) {
+            player.setVolume(0.5f)
+        }
+    }
+
+    @Test
+    fun restartForRerouteThrowsPlayerDeadExceptionWhenBinderIsDead() {
+        val fakePlayer = FakePlayer()
+        fakePlayer.throwDeadObjectOnPause = true
+        val access = HiddenPlayerAccess(FakePlayerIdCard::class.java)
+        val player = access.fromPlayerIdCard(FakePlayerIdCard(fakePlayer))
+            ?: error("expected HiddenPlayer")
+        assertThrows(PlayerDeadException::class.java) {
+            player.restartForReroute()
+        }
+    }
+
+    @Test
+    fun isAliveReturnsTrueForFakePlayerWithoutBinder() {
+        val fakePlayer = FakePlayer()
+        val access = HiddenPlayerAccess(FakePlayerIdCard::class.java)
+        val player = access.fromPlayerIdCard(FakePlayerIdCard(fakePlayer))
+            ?: error("expected HiddenPlayer")
+        assertTrue(player.isAlive())
+        assertNull(player.binder)
+    }
 }

@@ -25,7 +25,7 @@ class SoundManProtocolTest {
             setOf(SoundManProtocol.EXTRA_PROTOCOL_VERSION, SoundManProtocol.EXTRA_HOST_OFFER),
             extras.keys,
         )
-        assertEquals(3, SoundManProtocol.VERSION)
+        assertEquals(4, SoundManProtocol.VERSION)
     }
 
     @Test

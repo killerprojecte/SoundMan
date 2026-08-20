@@ -87,6 +87,7 @@ import hk.uwu.soundman.model.OutputTarget
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val SOURCE_STATE_LOG_INTERVAL_MILLIS = 2_000L
 private val Accent = Color(0xFF3482FF)
@@ -294,7 +295,12 @@ fun SoundPanel(
                                 onTargetSelected = { target ->
                                     val old = rules[pageApp.packageName] ?: ruleStore.readOrDefault(pageApp.packageName, pageApp.uid)
                                     rules[pageApp.packageName] = ruleStore.save(pageApp.packageName, pageApp.uid, old.volumePercent, target)
-                                    PreferredDeviceSync.publish(applicationContext, pageApp.uid, target)
+                                    PreferredDeviceSync.publish(
+                                        applicationContext,
+                                        pageApp.uid,
+                                        target,
+                                        hostSource.currentSystemDevice()
+                                    )
                                 },
                             )
                         }
@@ -348,7 +354,7 @@ private fun rememberDebouncedPlaybackApps(
     LaunchedEffect(apps, active, deadline) {
         if (!active || deadline == null) return@LaunchedEffect
         val wait = deadline - android.os.SystemClock.elapsedRealtime()
-        if (wait > 0L) delay(wait)
+        if (wait > 0L) delay(wait.milliseconds)
         generation += 1
     }
     return visible

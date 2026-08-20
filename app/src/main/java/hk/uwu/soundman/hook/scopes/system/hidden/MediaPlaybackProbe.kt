@@ -83,6 +83,8 @@ class MediaPlaybackProbe(
         const val FIRST_APPLICATION_UID = 10000
         const val PLAYER_STATE_STARTED = 2
         const val USAGE_MEDIA = 1
+        const val USAGE_NOTIFICATION_RINGTONE = 6
+        const val USAGE_ALARM = 4
         const val STREAM_MUSIC = 3
         const val WALLPAPER_PACKAGE = "com.miui.miwallpaper"
 
@@ -96,7 +98,10 @@ class MediaPlaybackProbe(
             if (uid < FIRST_APPLICATION_UID) return false
             if (playerState != PLAYER_STATE_STARTED) return false
             if (!isAllowedPackage(packageName)) return false
-            return usage == USAGE_MEDIA || volumeControlStream == STREAM_MUSIC
+            return usage == USAGE_MEDIA ||
+                    usage == USAGE_NOTIFICATION_RINGTONE ||
+                    usage == USAGE_ALARM ||
+                    volumeControlStream == STREAM_MUSIC
         }
 
         fun isAllowedPackage(packageName: String?): Boolean =

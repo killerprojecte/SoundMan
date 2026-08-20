@@ -12,6 +12,7 @@ import hk.uwu.soundman.hook.scopes.system.hidden.MediaPlaybackAccess
 import hk.uwu.soundman.hook.scopes.system.hidden.OutputDeviceMapper
 import hk.uwu.soundman.hook.scopes.system.hidden.PlaybackConfigurationAccess
 import hk.uwu.soundman.hook.scopes.system.hidden.PlaybackProbeFactory
+import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
 import hk.uwu.soundman.hook.scopes.system.runtime.OutputDeviceConsolidator
 import hk.uwu.soundman.hook.scopes.system.runtime.SnapshotPlaybackMerge
 import hk.uwu.soundman.hook.scopes.system.runtime.SystemAudioRuntime
@@ -109,6 +110,9 @@ object SystemAudioHooker : YukiBaseHooker() {
                     logError = { message, throwable -> YLog.error(message, throwable) },
                 ),
                 playbackMerge = SnapshotPlaybackMerge(),
+                systemMediaDeviceProbe = SystemMediaDeviceProbe { streamType ->
+                    audioSystem.getDevicesForStream(streamType)
+                },
                 log = { level, message, throwable ->
                     when (level) {
                         SystemAudioRuntime.LOG_DEBUG -> YLog.debug(message, throwable)

@@ -18,6 +18,8 @@ import android.os.Process
 import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
 import hk.uwu.soundman.hook.core.YLog
+import hk.uwu.soundman.hook.scopes.system.PreferredDeviceHooker.resolveSystemDevice
+import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
 import hk.uwu.soundman.ipc.PreferredDeviceSync
 import hk.uwu.soundman.ipc.PreferredDeviceUsage
 import hk.uwu.soundman.ipc.SoundManProtocol
@@ -41,6 +43,8 @@ object PreferredDeviceHooker : YukiBaseHooker() {
     private val loggedUnsetSkip = AtomicBoolean(false)
     @Volatile
     private var application: Application? = null
+    private val systemMediaDeviceProbe: SystemMediaDeviceProbe? =
+        SystemMediaDeviceProbe.createForAppProcess()
     private val routeLock = Any()
     private var cachedRoute: RouteState = RouteState.Unset
     private var cachedDevice: AudioDeviceInfo? = null
@@ -105,14 +109,23 @@ object PreferredDeviceHooker : YukiBaseHooker() {
     /**
      * 开机后模块 App 不会自动起来，广播到不了。
      * Application.onCreate 之前从模块 prefs 读全量 hint，按占用设备重算三条链路。
+     *
+     * 系统当前 MEDIA 输出设备由 App 进程自行探测（[resolveSystemDevice]），
+     * 因为此时还没有 snapshot 可用。广播到达后会由模块进程的 rebroadcast 更新。
      */
     private fun loadStoredRoute() {
         val uid = Process.myUid()
         val entries = moduleHintEntries()
         YLog.info("[route] prefs keys=${entries.size} entries=${describeEntries(entries)} uid=$uid")
+        val systemDevice = resolveSystemDevice()
+        YLog.info(
+            "[route] cold start system device=${
+                systemDevice?.let { "${it.publicType}|${it.address.ifEmpty { "<empty>" }}" } ?: "null"
+            } uid=$uid")
         val hint = try {
             val allocated = PreferredDeviceUsage.withAllocatedUsages(
-                PreferredDeviceSync.hintsFromEntries(entries)
+                PreferredDeviceSync.hintsFromEntries(entries),
+                systemDevice,
             )
             YLog.info("[route] allocated ${PreferredDeviceUsage.describe(allocated)} self=$uid")
             allocated.firstOrNull { candidate -> candidate.uid == uid }
@@ -125,6 +138,23 @@ object PreferredDeviceHooker : YukiBaseHooker() {
             return
         }
         applyHint(hint, source = "prefs")
+    }
+
+    /**
+     * App 进程冷启动时自行探测系统当前 MEDIA 输出设备。
+     *
+     * 动机：冷启动时没有 snapshot，模块进程可能还没起来。
+     * 通过反射 `AudioSystem.getDevicesForStream(STREAM_MUSIC)` 获取实际路由，
+     * 不使用设备优先级猜测。
+     */
+    private fun resolveSystemDevice(): PreferredDeviceSync.DeviceSpec? {
+        val context = currentApplication() ?: return null
+        val audioManager = context.getSystemService(AudioManager::class.java) ?: return null
+        val probe = systemMediaDeviceProbe ?: run {
+            YLog.warn("[route] SystemMediaDeviceProbe unavailable (reflection failed)")
+            return null
+        }
+        return probe.probe(audioManager)
     }
 
     private fun moduleHintEntries(): Map<String, *> {

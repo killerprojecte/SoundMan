@@ -67,6 +67,65 @@ class PreferredDeviceUsageTest {
     }
 
     @Test
+    fun followSystemOnSpeakerWithForcedBluetoothTriggersDisguise() {
+        val follow = PreferredDeviceSync.followSystem(1)
+        val bt = PreferredDeviceSync.forced(2, 8, "AA:BB")
+        val systemDevice = PreferredDeviceSync.DeviceSpec(2, "")
+        val usages = PreferredDeviceUsage.allocate(listOf(follow, bt), systemDevice)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE, usages[2])
+        assertTrue(PreferredDeviceUsage.shouldRewrite(usages.getValue(2)))
+        assertFalse(PreferredDeviceUsage.shouldRewrite(usages.getValue(1)))
+    }
+
+    @Test
+    fun followSystemOnBluetoothWithForcedSpeakerTriggersDisguise() {
+        val follow = PreferredDeviceSync.followSystem(1)
+        val speaker = PreferredDeviceSync.forced(2, 2, "")
+        val systemDevice = PreferredDeviceSync.DeviceSpec(8, "AA:BB")
+        val usages = PreferredDeviceUsage.allocate(listOf(follow, speaker), systemDevice)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE, usages[2])
+        assertTrue(PreferredDeviceUsage.shouldRewrite(usages.getValue(2)))
+    }
+
+    @Test
+    fun followSystemSameDeviceAsForcedNoDisguise() {
+        val follow = PreferredDeviceSync.followSystem(1)
+        val speaker = PreferredDeviceSync.forced(2, 2, "")
+        val systemDevice = PreferredDeviceSync.DeviceSpec(2, "")
+        val usages = PreferredDeviceUsage.allocate(listOf(follow, speaker), systemDevice)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[2])
+        assertFalse(PreferredDeviceUsage.shouldRewrite(usages.getValue(1)))
+        assertFalse(PreferredDeviceUsage.shouldRewrite(usages.getValue(2)))
+    }
+
+    @Test
+    fun followSystemWithNullSystemDeviceNoDisguise() {
+        val follow = PreferredDeviceSync.followSystem(1)
+        val bt = PreferredDeviceSync.forced(2, 8, "AA:BB")
+        val usages = PreferredDeviceUsage.allocate(listOf(follow, bt), systemDevice = null)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[2])
+    }
+
+    @Test
+    fun systemDeviceKeepsMediaForcedGetsDisguised() {
+        val follow = PreferredDeviceSync.followSystem(1)
+        val forcedBt = PreferredDeviceSync.forced(2, 8, "AA:BB")
+        val forcedSpeaker = PreferredDeviceSync.forced(3, 2, "")
+        val systemDevice = PreferredDeviceSync.DeviceSpec(2, "")
+        val usages =
+            PreferredDeviceUsage.allocate(listOf(follow, forcedBt, forcedSpeaker), systemDevice)
+        // System device (speaker) stays MEDIA; forced speaker shares the same deviceKey so also MEDIA.
+        // Bluetooth is the different device, gets disguised as RINGTONE.
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE, usages[2])
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[3])
+    }
+
+    @Test
     fun withAllocatedUsagesWritesBack() {
         val allocated = PreferredDeviceUsage.withAllocatedUsages(
             listOf(
@@ -108,7 +167,7 @@ class PreferredDeviceUsageTest {
         val error = org.junit.Assert.assertThrows(IllegalStateException::class.java) {
             PreferredDeviceUsage.allocate(hints)
         }
-        assertTrue(error.message.orEmpty().contains("too many distinct forced devices"))
+        assertTrue(error.message.orEmpty().contains("too many distinct occupied devices"))
     }
 
     @Test

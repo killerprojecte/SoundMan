@@ -1,6 +1,7 @@
 package hk.uwu.soundman.ipc
 
 import hk.uwu.soundman.ipc.PreferredDeviceUsage.USAGE_MEDIA
+import hk.uwu.soundman.ipc.PreferredDeviceUsage.allocate
 
 
 /**
@@ -12,6 +13,10 @@ import hk.uwu.soundman.ipc.PreferredDeviceUsage.USAGE_MEDIA
  *
  * Mix 拆开后各链路再 `setPreferredDevice` 钉到所选硬件。
  * FollowSystem 始终 MEDIA。contentType 不改，小米 ignore-focus 仍把 MUSIC 当可并播。
+ *
+ * **系统设备参与占用计算：** [allocate] 接收 [systemDevice] 参数，表示系统当前 MEDIA 输出设备。
+ * FollowSystem 的 app 实际占用此设备，因此 [systemDevice] 被纳入 `occupiedKeys` 计算。
+ * 当 FollowSystem 占用的系统设备与 forced 设备不同时，触发伪装，使各链路获得独立 mix。
  */
 object PreferredDeviceUsage {
     const val USAGE_MEDIA = 1
@@ -34,17 +39,26 @@ object PreferredDeviceUsage {
     )
 
     /**
+     * 按占用的输出设备动态分配 usage。
+     *
      * @param hints 当前全部 uid 的改道提示
+     * @param systemDevice 系统当前 MEDIA 输出设备的公开身份；FollowSystem 的 app 占用此设备。
+     *        为 null 时回退到只看 forced 设备的原行为。
      * @return uid → usage
      */
-    fun allocate(hints: List<PreferredDeviceSync.RouteHint>): Map<Int, Int> {
-        val forced = hints.filter { hint -> !hint.followSystem }
-        val occupiedKeys = forced.map(::deviceKey).distinct()
+    fun allocate(
+        hints: List<PreferredDeviceSync.RouteHint>,
+        systemDevice: PreferredDeviceSync.DeviceSpec? = null,
+    ): Map<Int, Int> {
+        val systemKey = systemDevice?.let(::deviceKey)
+        val occupiedKeys = hints.map { hint ->
+            if (hint.followSystem) systemKey else deviceKey(hint)
+        }.filterNotNull().distinct()
         val disguised = LinkedHashMap<String, Int>()
         if (occupiedKeys.size > 1) {
-            occupiedDeviceKeys(forced).drop(1).forEachIndexed { index, key ->
+            occupiedDeviceKeys(hints, systemKey).drop(1).forEachIndexed { index, key ->
                 check(index < POOL.size) {
-                    "too many distinct forced devices: ${index + 2}, max=$MAX_INDEPENDENT_DEVICES"
+                    "too many distinct occupied devices: ${index + 2}, max=$MAX_INDEPENDENT_DEVICES"
                 }
                 disguised[key] = POOL[index]
             }
@@ -60,8 +74,11 @@ object PreferredDeviceUsage {
     }
 
     /** 把分配结果写回 hint。 */
-    fun withAllocatedUsages(hints: List<PreferredDeviceSync.RouteHint>): List<PreferredDeviceSync.RouteHint> {
-        val usages = allocate(hints)
+    fun withAllocatedUsages(
+        hints: List<PreferredDeviceSync.RouteHint>,
+        systemDevice: PreferredDeviceSync.DeviceSpec? = null,
+    ): List<PreferredDeviceSync.RouteHint> {
+        val usages = allocate(hints, systemDevice)
         return hints.map { hint ->
             hint.copy(usage = usages[hint.uid] ?: USAGE_MEDIA)
         }
@@ -93,16 +110,40 @@ object PreferredDeviceUsage {
         }
 
     /**
-     * 多设备时外放（蓝牙/USB/有线）排在前面保持 MEDIA，本机最后才伪装。
+     * 多设备时排序：系统设备排第一保持 MEDIA，其余外放（蓝牙/USB/有线）优先，本机最后才伪装。
+     *
+     * @param hints 全部 hint（含 FollowSystem）
+     * @param systemKey 系统设备的 deviceKey（可能为 null）
      */
-    private fun occupiedDeviceKeys(forced: List<PreferredDeviceSync.RouteHint>): List<String> =
-        forced.map { hint -> deviceKey(hint) to hint.publicType }
-            .distinctBy { entry -> entry.first }
-            .sortedWith(compareBy({ isBuiltin(it.second) }, { it.second }, { it.first }))
-            .map { entry -> entry.first }
+    private fun occupiedDeviceKeys(
+        hints: List<PreferredDeviceSync.RouteHint>,
+        systemKey: String?,
+    ): List<String> =
+        hints.map { hint ->
+            if (hint.followSystem) {
+                systemKey?.let { it to 0 }
+            } else {
+                deviceKey(hint) to hint.publicType
+            }
+        }.filterNotNull()
+            .distinctBy { it.first }
+            .sortedWith(
+                compareBy(
+                    { !isSystem(it.first, systemKey) },
+                    { isBuiltin(it.second) },
+                    { it.second },
+                    { it.first })
+            )
+            .map { it.first }
 
     private fun deviceKey(hint: PreferredDeviceSync.RouteHint): String =
         "${hint.publicType}|${hint.address}"
+
+    private fun deviceKey(spec: PreferredDeviceSync.DeviceSpec): String =
+        "${spec.publicType}|${spec.address}"
+
+    private fun isSystem(key: String, systemKey: String?): Boolean =
+        systemKey != null && key == systemKey
 
     private fun isBuiltin(publicType: Int): Boolean =
         publicType == TYPE_BUILTIN_EARPIECE || publicType == TYPE_BUILTIN_SPEAKER

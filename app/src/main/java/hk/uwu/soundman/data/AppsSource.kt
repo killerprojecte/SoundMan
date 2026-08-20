@@ -2,10 +2,15 @@ package hk.uwu.soundman.data
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import com.highcapable.kavaref.extension.classOf
 import hk.uwu.soundman.R
+import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
 import hk.uwu.soundman.ipc.PreferredDeviceSync
 import hk.uwu.soundman.ipc.SoundManHostBridgeClient
 import hk.uwu.soundman.ipc.SoundManProtocol
@@ -63,9 +68,76 @@ class HostPlaybackSource(
     @Volatile
     private var closed = false
 
+    @Volatile
+    private var cachedSystemDevice: PreferredDeviceSync.DeviceSpec? = null
+
+    private val systemMediaDeviceProbe: SystemMediaDeviceProbe? =
+        SystemMediaDeviceProbe.createForAppProcess()
+    private var deviceCallbackRegistered = false
+    private val deviceChangeDebounce = Runnable { reprobeSystemDeviceAndRebroadcast() }
+
     private var sessionInitialized = false
     private var reconnectAttempt = 0
     private var reconnectScheduled = false
+
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            scheduleDeviceReprobe()
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            scheduleDeviceReprobe()
+        }
+    }
+
+    private fun scheduleDeviceReprobe() {
+        handler.removeCallbacks(deviceChangeDebounce)
+        handler.postDelayed(deviceChangeDebounce, DEVICE_CHANGE_DEBOUNCE_MS)
+    }
+
+    private fun reprobeSystemDeviceAndRebroadcast() {
+        if (closed) return
+        val audioManager = applicationContext.getSystemService(classOf<AudioManager>())
+        if (audioManager == null) {
+            AppLog.error("[route] AudioManager unavailable for system device reprobe")
+            return
+        }
+        val probe = systemMediaDeviceProbe ?: run {
+            AppLog.error("[route] SystemMediaDeviceProbe unavailable (reflection failed)")
+            return
+        }
+        val newDevice = probe.probe(audioManager)
+        val oldDevice = cachedSystemDevice
+        if (newDevice == oldDevice) return
+        cachedSystemDevice = newDevice
+        AppLog.info(
+            "[route] system device changed old=${
+                oldDevice?.let { "${it.publicType}|${it.address.ifEmpty { "<empty>" }}" } ?: "null"
+            } new=${
+                newDevice?.let { "${it.publicType}|${it.address.ifEmpty { "<empty>" }}" } ?: "null"
+            }")
+        try {
+            PreferredDeviceSync.rebroadcastAllocated(applicationContext, newDevice)
+        } catch (error: Throwable) {
+            AppLog.error("[route] Failed to rebroadcast after system device change", error)
+        }
+    }
+
+    private fun ensureDeviceCallback() {
+        if (deviceCallbackRegistered) return
+        val audioManager = applicationContext.getSystemService(classOf<AudioManager>())
+        if (audioManager == null) {
+            AppLog.error("[route] AudioManager unavailable for device callback registration")
+            return
+        }
+        try {
+            audioManager.registerAudioDeviceCallback(deviceCallback, handler)
+            deviceCallbackRegistered = true
+            AppLog.info("[route] module process AudioDeviceCallback registered")
+        } catch (error: Throwable) {
+            AppLog.error("[route] Failed to register AudioDeviceCallback", error)
+        }
+    }
 
     private val reconnectRunnable = Runnable {
         reconnectScheduled = false
@@ -98,6 +170,7 @@ class HostPlaybackSource(
     )
 
     init {
+        ensureDeviceCallback()
         check(postToWorker("initial connection") {
             connectThenOnWorker("initial connection failed")
         }) { "HostPlaybackSource worker rejected initial connection" }
@@ -110,6 +183,9 @@ class HostPlaybackSource(
     }
 
     fun currentDeviceScan(): AudioDeviceScan = deviceScan
+
+    /** 当前缓存的系统 MEDIA 输出设备，供面板 publish 时透传给 allocate。 */
+    fun currentSystemDevice(): PreferredDeviceSync.DeviceSpec? = cachedSystemDevice
 
     fun observeDevices(observer: (AudioDeviceScan) -> Unit): () -> Unit {
         deviceObservers += observer
@@ -205,7 +281,11 @@ class HostPlaybackSource(
                 bridge.requestSnapshot(UUID.randomUUID().toString())
                 armSnapshotWatchdog()
                 try {
-                    PreferredDeviceSync.publishAll(applicationContext, ruleStore.readAll().values)
+                    PreferredDeviceSync.publishAll(
+                        applicationContext,
+                        ruleStore.readAll().values,
+                        cachedSystemDevice
+                    )
                 } catch (error: Throwable) {
                     AppLog.error("[route] Failed to republish preferred device rules", error)
                 }
@@ -287,6 +367,18 @@ class HostPlaybackSource(
 
     private fun publishSnapshot(snapshot: SoundManProtocol.Snapshot) {
         publishDevices(AudioDeviceScan(snapshot.outputDevices, null))
+        val systemDevice = snapshot.systemMediaDevice?.let { device ->
+            val identity = device.candidates.first()
+            PreferredDeviceSync.DeviceSpec(identity.internalType, identity.address)
+        }
+        if (systemDevice != null) {
+            cachedSystemDevice = systemDevice
+            AppLog.info(
+                "[route] snapshot system device=${
+                    "${systemDevice.publicType}|${systemDevice.address.ifEmpty { "<empty>" }}"
+                }"
+            )
+        }
         val apps = snapshot.playback
             .map { entry -> loadApp(entry.packageName, entry.uid) }
             .sortedBy { it.label.lowercase() }
@@ -356,6 +448,7 @@ class HostPlaybackSource(
         const val RECONNECT_MAX_DELAY_MS = 30_000L
         const val RECONNECT_MAX_SHIFT = 6
         const val SNAPSHOT_WATCHDOG_MS = 2_000L
+        const val DEVICE_CHANGE_DEBOUNCE_MS = 200L
     }
 
     private fun postToWorker(label: String, action: () -> Unit): Boolean {
@@ -386,6 +479,15 @@ class HostPlaybackSource(
             handler.removeCallbacksAndMessages(null)
         }
         reconnectScheduled = false
+        if (deviceCallbackRegistered) {
+            try {
+                applicationContext.getSystemService(classOf<AudioManager>())
+                    ?.unregisterAudioDeviceCallback(deviceCallback)
+            } catch (error: Throwable) {
+                AppLog.error("[route] Failed to unregister AudioDeviceCallback", error)
+            }
+            deviceCallbackRegistered = false
+        }
         bridge.close()
         connectExecutor.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)

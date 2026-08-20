@@ -24,6 +24,7 @@ public final class FakeAudioSystem {
     public static int connectionStateResult = DEVICE_STATE_AVAILABLE;
     public static int setAffinityResult = 0;
     public static int removeAffinityResult = 0;
+    public static int devicesForStreamResult = 0;
     public static RuntimeException throwOnGet;
     public static RuntimeException throwOnSet;
     public static RuntimeException throwOnRemove;
@@ -40,6 +41,7 @@ public final class FakeAudioSystem {
         connectionStateResult = DEVICE_STATE_AVAILABLE;
         setAffinityResult = 0;
         removeAffinityResult = 0;
+        devicesForStreamResult = 0;
         throwOnGet = null;
         throwOnSet = null;
         throwOnRemove = null;
@@ -70,5 +72,9 @@ public final class FakeAudioSystem {
         }
         lastUid = uid;
         return removeAffinityResult;
+    }
+
+    public static int getDevicesForStream(int streamType) {
+        return devicesForStreamResult;
     }
 }

@@ -213,6 +213,19 @@ class PreferredDeviceSyncTest {
     }
 
     @Test
+    fun allocatedHintForUidWithSystemDeviceTriggersDisguiseForFollowSystem() {
+        val entries = mapOf(
+            "10" to "",
+            "20" to "8|AA:BB",
+        )
+        val systemDevice = PreferredDeviceSync.DeviceSpec(2, "")
+        val follow = PreferredDeviceSync.allocatedHintForUid(entries, 10, systemDevice)!!
+        val bluetooth = PreferredDeviceSync.allocatedHintForUid(entries, 20, systemDevice)!!
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, follow.usage)
+        assertEquals(PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE, bluetooth.usage)
+    }
+
+    @Test
     fun describeHintIncludesUsageName() {
         val hint = PreferredDeviceSync.forced(7, 2, "")
             .copy(usage = PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE)
