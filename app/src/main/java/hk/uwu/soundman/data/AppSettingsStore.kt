@@ -14,6 +14,7 @@ data class AppSettings(
     val volumePercentEnabled: Boolean = AppSettingsDefaults.VOLUME_PERCENT_ENABLED,
     val systemUiBuiltinVolumePanelEnabled: Boolean = AppSettingsDefaults.SYSTEM_UI_BUILTIN_VOLUME_PANEL_ENABLED,
     val hideSystemAppsEnabled: Boolean = AppSettingsDefaults.HIDE_SYSTEM_APPS_ENABLED,
+    val alarmFirstEnabled: Boolean = AppSettingsDefaults.ALARM_FIRST_ENABLED,
 )
 
 /** 设置默认值，供存储实现与纯 JVM 测试共享。 */
@@ -22,6 +23,7 @@ object AppSettingsDefaults {
     const val VOLUME_PERCENT_ENABLED = false
     const val SYSTEM_UI_BUILTIN_VOLUME_PANEL_ENABLED = false
     const val HIDE_SYSTEM_APPS_ENABLED = false
+    const val ALARM_FIRST_ENABLED = false
 }
 
 /** SharedPreferences 键名的唯一来源，避免读写两端发生漂移。 */
@@ -30,12 +32,14 @@ object AppSettingsKeys {
     const val VOLUME_PERCENT = "volume_percent_enabled"
     const val SYSTEM_UI_BUILTIN_VOLUME_PANEL = "system_ui_builtin_volume_panel_enabled"
     const val HIDE_SYSTEM_APPS = "hide_system_apps_enabled"
+    const val ALARM_FIRST = "alarm_first_enabled"
 
     val all: Set<String> = setOf(
         SMOOTH_CORNERS,
         VOLUME_PERCENT,
         SYSTEM_UI_BUILTIN_VOLUME_PANEL,
         HIDE_SYSTEM_APPS,
+        ALARM_FIRST,
     )
 }
 
@@ -59,6 +63,9 @@ interface AppSettingsStore {
 
     /** 持久化隐藏系统应用开关，并返回最新快照。 */
     fun setHideSystemAppsEnabled(enabled: Boolean): AppSettings
+
+    /** 持久化闹钟优先开关，并返回最新快照。 */
+    fun setAlarmFirstEnabled(enabled: Boolean): AppSettings
 }
 
 /**
@@ -90,6 +97,20 @@ object SystemUiAppSettingsSync {
                     "available=${crossProcessPreferences.isPreferencesAvailable}",
         )
     }
+
+    /** 将"闹钟优先"设置同步到跨进程偏好，供被注入进程读取。 */
+    fun persistAlarmFirstEnabled(context: Context, enabled: Boolean) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putBoolean(AppSettingsKeys.ALARM_FIRST, enabled)
+        }
+        val readBack = crossProcessPreferences.getBoolean(AppSettingsKeys.ALARM_FIRST, !enabled)
+        AppLog.info(
+            "Persisted alarm-first setting enabled=$enabled " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable} " +
+                    "readBack=$readBack",
+        )
+    }
 }
 
 /** 使用应用独立 SharedPreferences 文件保存设置。 */
@@ -97,6 +118,7 @@ class SharedPreferencesAppSettingsStore(
     private val preferences: SharedPreferences,
     private val systemUiBuiltinPanelMirror: ((Boolean) -> Unit)? = null,
     private val hideSystemAppsMirror: ((Boolean) -> Unit)? = null,
+    private val alarmFirstMirror: ((Boolean) -> Unit)? = null,
 ) : AppSettingsStore {
     override fun read(): AppSettings = logged("read app settings") {
         AppSettings(
@@ -115,6 +137,10 @@ class SharedPreferencesAppSettingsStore(
             hideSystemAppsEnabled = preferences.getBoolean(
                 AppSettingsKeys.HIDE_SYSTEM_APPS,
                 AppSettingsDefaults.HIDE_SYSTEM_APPS_ENABLED,
+            ),
+            alarmFirstEnabled = preferences.getBoolean(
+                AppSettingsKeys.ALARM_FIRST,
+                AppSettingsDefaults.ALARM_FIRST_ENABLED,
             ),
         )
     }
@@ -154,6 +180,23 @@ class SharedPreferencesAppSettingsStore(
                 error.addSuppressed(rollbackError)
             }
             AppLog.error("Unable to mirror hide-system-apps setting", error)
+            throw error
+        }
+        return updated
+    }
+
+    override fun setAlarmFirstEnabled(enabled: Boolean): AppSettings {
+        val previous = read().alarmFirstEnabled
+        val updated = write(AppSettingsKeys.ALARM_FIRST, enabled)
+        try {
+            alarmFirstMirror?.invoke(enabled)
+        } catch (error: RuntimeException) {
+            try {
+                write(AppSettingsKeys.ALARM_FIRST, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror alarm-first setting", error)
             throw error
         }
         return updated

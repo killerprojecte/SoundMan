@@ -169,6 +169,9 @@ fun HomeScreen(
                         onHideSystemAppsChanged = {
                             settings = settingsStore.setHideSystemAppsEnabled(it)
                         },
+                        onAlarmFirstChanged = {
+                            settings = settingsStore.setAlarmFirstEnabled(it)
+                        },
                     )
                 }
             }
@@ -420,6 +423,7 @@ private fun SettingsPage(
     onVolumePercentChanged: (Boolean) -> Unit,
     onSystemUiBuiltinVolumePanelChanged: (Boolean) -> Unit,
     onHideSystemAppsChanged: (Boolean) -> Unit,
+    onAlarmFirstChanged: (Boolean) -> Unit,
 ) {
     Column(
         Modifier
@@ -483,6 +487,12 @@ private fun SettingsPage(
             summary = stringResource(R.string.settings_hide_system_apps_summary),
             checked = settings.hideSystemAppsEnabled,
             onCheckedChange = onHideSystemAppsChanged,
+        )
+        SettingsToggleCard(
+            title = stringResource(R.string.settings_alarm_first),
+            summary = stringResource(R.string.settings_alarm_first_summary),
+            checked = settings.alarmFirstEnabled,
+            onCheckedChange = onAlarmFirstChanged,
         )
     }
 }

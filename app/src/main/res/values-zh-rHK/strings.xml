@@ -14,6 +14,8 @@
     <string name="settings_volume_percent_summary">在每個應用音量條上方顯示目前百分比</string>
     <string name="settings_hide_system_apps">隱藏系統應用</string>
     <string name="settings_hide_system_apps_summary">在音量面板中不顯示系統應用</string>
+    <string name="settings_alarm_first">鬧鐘優先</string>
+    <string name="settings_alarm_first_summary">多裝置分離輸出時，第二輸出流優先使用鬧鐘類型而非鈴聲類型</string>
     <string name="home_xposed_active">模組已啟用</string>
     <string name="home_xposed_inactive">模組未啟用</string>
     <string name="home_xposed_inactive_hint">請在 Xposed 管理器中啟用模組，並剔選系統框架、系統介面以及其他需要生效的應用程式</string>

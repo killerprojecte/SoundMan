@@ -13,6 +13,8 @@ import hk.uwu.soundman.data.InstalledAppsAccess
 import hk.uwu.soundman.data.PermissionCatalog
 import hk.uwu.soundman.data.SharedPreferencesAppSettingsStore
 import hk.uwu.soundman.data.SystemUiAppSettingsSync
+import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
+import hk.uwu.soundman.ipc.PreferredDeviceSync
 import hk.uwu.soundman.log.AppLog
 import hk.uwu.soundman.overlay.OverlayHostService
 import hk.uwu.soundman.overlay.OverlayOpenRequest
@@ -65,6 +67,15 @@ class MainActivity : ComponentActivity() {
             hideSystemAppsMirror = { enabled ->
                 SystemUiAppSettingsSync.persistHideSystemAppsEnabled(this, enabled)
             },
+            alarmFirstMirror = { enabled ->
+                SystemUiAppSettingsSync.persistAlarmFirstEnabled(this, enabled)
+                try {
+                    val systemDevice = probeSystemDevice()
+                    PreferredDeviceSync.rebroadcastAllocated(this, systemDevice)
+                } catch (error: RuntimeException) {
+                    AppLog.error("Unable to rebroadcast after alarm-first setting change", error)
+                }
+            },
         )
         try {
             SystemUiAppSettingsSync.persistBuiltinPanelEnabled(
@@ -85,6 +96,17 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize hide-system-apps setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistAlarmFirstEnabled(
+                this,
+                settingsStore.read().alarmFirstEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize alarm-first setting during startup",
                 error
             )
         }
@@ -129,6 +151,24 @@ class MainActivity : ComponentActivity() {
     private fun showSystemOverlay() {
         OverlayHostService.startShow(this, OverlayOpenRequest.fromIntent(intent))
         if (finishAfterOverlay && !homeVisible) finish()
+    }
+
+    /**
+     * 探测系统当前 MEDIA 输出设备，供 alarmFirst 切换后 rebroadcast 使用。
+     *
+     * 动机：rebroadcastAllocated 需要 systemDevice 才能正确计算 FollowSystem app 的伪装。
+     * 模块进程通过反射 AudioSystem.getDevicesForStream 获取实际路由。
+     * 反射失败时返回 null，退化为只看 forced 设备的原行为。
+     */
+    private fun probeSystemDevice(): PreferredDeviceSync.DeviceSpec? {
+        val probe = SystemMediaDeviceProbe.createForAppProcess() ?: return null
+        val audioManager = getSystemService(android.media.AudioManager::class.java) ?: return null
+        return try {
+            probe.probe(audioManager)
+        } catch (error: Throwable) {
+            AppLog.error("[alarm-first] failed to probe system device", error)
+            null
+        }
     }
 
     companion object {

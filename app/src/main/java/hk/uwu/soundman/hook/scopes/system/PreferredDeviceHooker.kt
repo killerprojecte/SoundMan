@@ -17,6 +17,9 @@ import android.os.Looper
 import android.os.Process
 import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
+import hk.uwu.soundman.data.AppSettingsDefaults
+import hk.uwu.soundman.data.AppSettingsKeys
+import hk.uwu.soundman.data.SYSTEM_UI_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.hook.core.YLog
 import hk.uwu.soundman.hook.scopes.system.PreferredDeviceHooker.resolveSystemDevice
 import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
@@ -123,6 +126,7 @@ object PreferredDeviceHooker : YukiBaseHooker() {
                 systemDevice?.let { "${it.publicType}|${it.address.ifEmpty { "<empty>" }}" } ?: "null"
             } uid=$uid")
         val hint = try {
+            syncAlarmFirstFromPrefs()
             val allocated = PreferredDeviceUsage.withAllocatedUsages(
                 PreferredDeviceSync.hintsFromEntries(entries),
                 systemDevice,
@@ -176,6 +180,25 @@ object PreferredDeviceHooker : YukiBaseHooker() {
         entries.entries.joinToString(prefix = "[", postfix = "]") { (key, value) ->
             "$key=${(value as? String)?.ifEmpty { "<follow>" } ?: value}"
         }
+
+    /**
+     * 从跨进程 prefs 读取闹钟优先设置，同步到 [PreferredDeviceUsage.alarmFirst]。
+     *
+     * 动机：被注入进程需要和模块进程使用同一份闹钟优先设置，通过 YukiHook 跨进程 prefs 读取。
+     */
+    private fun syncAlarmFirstFromPrefs() {
+        try {
+            val prefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+            if (!prefs.isPreferencesAvailable) return
+            PreferredDeviceUsage.alarmFirst =
+                prefs.getBoolean(
+                    AppSettingsKeys.ALARM_FIRST,
+                    AppSettingsDefaults.ALARM_FIRST_ENABLED
+                )
+        } catch (error: Throwable) {
+            YLog.warn("[route] failed to read alarm-first setting uid=${Process.myUid()}", error)
+        }
+    }
 
     private fun applyHint(hint: PreferredDeviceSync.RouteHint, source: String) {
         synchronized(routeLock) {

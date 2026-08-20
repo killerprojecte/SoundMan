@@ -6,6 +6,9 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import com.highcapable.kavaref.extension.classOf
 import com.highcapable.yukihookapi.hook.factory.prefs
+import hk.uwu.soundman.data.AppSettingsDefaults
+import hk.uwu.soundman.data.AppSettingsKeys
+import hk.uwu.soundman.data.SYSTEM_UI_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.log.AppLog
 import hk.uwu.soundman.model.AppAudioRule
 import hk.uwu.soundman.model.OutputDeviceType
@@ -371,10 +374,16 @@ object PreferredDeviceSync {
      * @param systemDevice 系统当前 MEDIA 输出设备，用于 allocate 伪装判断
      */
     fun rebroadcastAllocated(context: Context, systemDevice: DeviceSpec? = null) {
+        val alarmFirst = readAlarmFirstFromPrefs(context)
         val allocated =
-            PreferredDeviceUsage.withAllocatedUsages(loadStoredHints(context), systemDevice)
+            PreferredDeviceUsage.withAllocatedUsages(
+                loadStoredHints(context),
+                systemDevice,
+                alarmFirst
+            )
         AppLog.info(
-            "[route] rebroadcast count=${allocated.size} ${PreferredDeviceUsage.describe(allocated)}",
+            "[route] rebroadcast count=${allocated.size} alarmFirst=$alarmFirst " +
+                    "${PreferredDeviceUsage.describe(allocated)}",
         )
         allocated.forEach { hint ->
             AppLog.info("[route] broadcast ${describe(hint)}")
@@ -486,4 +495,23 @@ object PreferredDeviceSync {
 
     private fun normalizeAddress(address: String): String =
         address.filter(Char::isLetterOrDigit).uppercase()
+
+    /**
+     * 从跨进程 prefs 读取闹钟优先设置。
+     *
+     * 动机：避免在公开方法上增加参数透传。模块进程和被注入进程都通过 YukiHook prefs 读取同一份跨进程偏好。
+     * 返回值直接传给 [PreferredDeviceUsage.allocate] 的 `alarmFirst` 参数，不依赖全局可变状态，
+     * 避免并发 rebroadcast 互相覆盖。
+     */
+    private fun readAlarmFirstFromPrefs(context: Context): Boolean {
+        val prefs = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        if (!prefs.isPreferencesAvailable) {
+            AppLog.warn("[route] alarm-first prefs not available")
+            return false
+        }
+        val value =
+            prefs.getBoolean(AppSettingsKeys.ALARM_FIRST, AppSettingsDefaults.ALARM_FIRST_ENABLED)
+        AppLog.info("[route] alarm-first prefs read value=$value")
+        return value
+    }
 }

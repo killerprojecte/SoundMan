@@ -16,6 +16,8 @@
     <string name="settings_systemui_builtin_volume_panel_summary">在当前系统音量对话框内显示应用音量控制；失败时自动回退到悬浮面板</string>
     <string name="settings_hide_system_apps">隐藏系统应用</string>
     <string name="settings_hide_system_apps_summary">在音量面板中不显示系统应用</string>
+    <string name="settings_alarm_first">闹钟优先</string>
+    <string name="settings_alarm_first_summary">多设备分离输出时，第二输出流优先使用闹钟类型而非铃声类型</string>
     <string name="home_xposed_active">模块已激活</string>
     <string name="home_xposed_inactive">模块未激活</string>
     <string name="home_xposed_inactive_hint">请在 Xposed 管理器中启用模块，并勾选系统框架、系统界面以及其他需要生效的应用</string>

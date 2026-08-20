@@ -1,6 +1,9 @@
 package hk.uwu.soundman.ipc
 
+import hk.uwu.soundman.ipc.PreferredDeviceUsage.USAGE_ALARM
 import hk.uwu.soundman.ipc.PreferredDeviceUsage.USAGE_MEDIA
+import hk.uwu.soundman.ipc.PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE
+import hk.uwu.soundman.ipc.PreferredDeviceUsage.alarmFirst
 import hk.uwu.soundman.ipc.PreferredDeviceUsage.allocate
 
 
@@ -8,8 +11,8 @@ import hk.uwu.soundman.ipc.PreferredDeviceUsage.allocate
  * 按占用的输出设备动态分配最多三条独立播放链路。
  *
  * 1. 只有一台设备占用：全部 [USAGE_MEDIA]，不伪装，走正常媒体通路。
- * 2. 两台：外放（蓝牙/USB）保持 MEDIA，新增占用伪装成铃声。
- * 3. 三台：第三条伪装成闹钟。
+ * 2. 两台：外放（蓝牙/USB）保持 MEDIA，新增占用伪装成铃声或闹钟（取决于 [alarmFirst]）。
+ * 3. 三台：第三条伪装成剩余的另一个类型。
  *
  * Mix 拆开后各链路再 `setPreferredDevice` 钉到所选硬件。
  * FollowSystem 始终 MEDIA。contentType 不改，小米 ignore-focus 仍把 MUSIC 当可并播。
@@ -17,6 +20,9 @@ import hk.uwu.soundman.ipc.PreferredDeviceUsage.allocate
  * **系统设备参与占用计算：** [allocate] 接收 [systemDevice] 参数，表示系统当前 MEDIA 输出设备。
  * FollowSystem 的 app 实际占用此设备，因此 [systemDevice] 被纳入 `occupiedKeys` 计算。
  * 当 FollowSystem 占用的系统设备与 forced 设备不同时，触发伪装，使各链路获得独立 mix。
+ *
+ * **闹钟优先：** [alarmFirst] 为 true 时，第 2 条链路优先使用 [USAGE_ALARM]，第 3 条使用 [USAGE_NOTIFICATION_RINGTONE]。
+ * 默认 false，保持原有行为（铃声优先）。由 [PreferredDeviceSync] 从跨进程 prefs 读取后设置。
  */
 object PreferredDeviceUsage {
     const val USAGE_MEDIA = 1
@@ -32,11 +38,28 @@ object PreferredDeviceUsage {
     private const val TYPE_BUILTIN_EARPIECE = 1
     private const val TYPE_BUILTIN_SPEAKER = 2
 
-    /** 第 2、第 3 条链路：铃声、闹钟。 */
-    private val POOL = intArrayOf(
-        USAGE_NOTIFICATION_RINGTONE,
-        USAGE_ALARM,
-    )
+    /**
+     * 是否让第 2 条链路优先使用闹钟 usage。
+     *
+     * 动机：用户可能希望多设备分离时第二输出流走闹钟通路而非铃声通路。
+     * 由 [PreferredDeviceSync] / [PreferredDeviceHooker] 从跨进程 prefs 读取后设置。
+     *
+     * **注意：** 此全局状态仅供冷启动 [PreferredDeviceHooker.loadStoredRoute] 使用，
+     * 因为该路径无法获取 Context 来读取 prefs。[PreferredDeviceSync] 的方法内部
+     * 直接将读取的值传给 [allocate] 的 `alarmFirst` 参数，不依赖此全局状态，
+     * 避免并发 rebroadcast 互相覆盖。
+     */
+    @Volatile
+    var alarmFirst: Boolean = false
+
+    /**
+     * 返回当前伪装 usage 池，根据 [alarmFirst] 参数决定顺序。
+     *
+     * @param alarmFirst true 时第 2 条链路用 ALARM，false 时用 RINGTONE
+     */
+    private fun pool(alarmFirst: Boolean): IntArray =
+        if (alarmFirst) intArrayOf(USAGE_ALARM, USAGE_NOTIFICATION_RINGTONE)
+        else intArrayOf(USAGE_NOTIFICATION_RINGTONE, USAGE_ALARM)
 
     /**
      * 按占用的输出设备动态分配 usage。
@@ -44,11 +67,14 @@ object PreferredDeviceUsage {
      * @param hints 当前全部 uid 的改道提示
      * @param systemDevice 系统当前 MEDIA 输出设备的公开身份；FollowSystem 的 app 占用此设备。
      *        为 null 时回退到只看 forced 设备的原行为。
+     * @param alarmFirst true 时第 2 条链路优先使用 ALARM，false 时使用 RINGTONE。
+     *        默认读取全局 [alarmFirst] 状态，供冷启动路径使用。
      * @return uid → usage
      */
     fun allocate(
         hints: List<PreferredDeviceSync.RouteHint>,
         systemDevice: PreferredDeviceSync.DeviceSpec? = null,
+        alarmFirst: Boolean = this.alarmFirst,
     ): Map<Int, Int> {
         val systemKey = systemDevice?.let(::deviceKey)
         val occupiedKeys = hints.map { hint ->
@@ -56,11 +82,12 @@ object PreferredDeviceUsage {
         }.filterNotNull().distinct()
         val disguised = LinkedHashMap<String, Int>()
         if (occupiedKeys.size > 1) {
+            val pool = pool(alarmFirst)
             occupiedDeviceKeys(hints, systemKey).drop(1).forEachIndexed { index, key ->
-                check(index < POOL.size) {
+                check(index < pool.size) {
                     "too many distinct occupied devices: ${index + 2}, max=$MAX_INDEPENDENT_DEVICES"
                 }
-                disguised[key] = POOL[index]
+                disguised[key] = pool[index]
             }
         }
         return hints.associate { hint ->
@@ -77,8 +104,9 @@ object PreferredDeviceUsage {
     fun withAllocatedUsages(
         hints: List<PreferredDeviceSync.RouteHint>,
         systemDevice: PreferredDeviceSync.DeviceSpec? = null,
+        alarmFirst: Boolean = this.alarmFirst,
     ): List<PreferredDeviceSync.RouteHint> {
-        val usages = allocate(hints, systemDevice)
+        val usages = allocate(hints, systemDevice, alarmFirst)
         return hints.map { hint ->
             hint.copy(usage = usages[hint.uid] ?: USAGE_MEDIA)
         }

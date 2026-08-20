@@ -1,11 +1,17 @@
 package hk.uwu.soundman.ipc
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PreferredDeviceUsageTest {
+
+    @After
+    fun resetAlarmFirst() {
+        PreferredDeviceUsage.alarmFirst = false
+    }
     @Test
     fun followSystemStaysMedia() {
         val usages = PreferredDeviceUsage.allocate(
@@ -191,5 +197,42 @@ class PreferredDeviceUsageTest {
         )
         assertTrue(described.contains("uid=8"))
         assertTrue(described.contains("usage=RINGTONE"))
+    }
+
+    @Test
+    fun alarmFirstSecondDeviceIsAlarm() {
+        PreferredDeviceUsage.alarmFirst = true
+        val speaker = PreferredDeviceSync.forced(1, 2, "")
+        val bt = PreferredDeviceSync.forced(2, 8, "AA:BB")
+        val usages = PreferredDeviceUsage.allocate(listOf(speaker, bt))
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[2])
+        assertEquals(PreferredDeviceUsage.USAGE_ALARM, usages[1])
+        assertTrue(PreferredDeviceUsage.shouldRewrite(usages.getValue(1)))
+    }
+
+    @Test
+    fun alarmFirstThirdDeviceIsRingtone() {
+        PreferredDeviceUsage.alarmFirst = true
+        val hints = listOf(
+            PreferredDeviceSync.forced(1, 2, ""),
+            PreferredDeviceSync.forced(2, 8, "A"),
+            PreferredDeviceSync.forced(3, 11, "usb"),
+        )
+        val usages = PreferredDeviceUsage.allocate(hints)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[2])
+        assertEquals(PreferredDeviceUsage.USAGE_ALARM, usages[3])
+        assertEquals(PreferredDeviceUsage.USAGE_NOTIFICATION_RINGTONE, usages[1])
+    }
+
+    @Test
+    fun alarmFirstFollowSystemWithForcedBluetoothUsesAlarm() {
+        PreferredDeviceUsage.alarmFirst = true
+        val follow = PreferredDeviceSync.followSystem(1)
+        val bt = PreferredDeviceSync.forced(2, 8, "AA:BB")
+        val systemDevice = PreferredDeviceSync.DeviceSpec(2, "")
+        val usages = PreferredDeviceUsage.allocate(listOf(follow, bt), systemDevice)
+        assertEquals(PreferredDeviceUsage.USAGE_MEDIA, usages[1])
+        assertEquals(PreferredDeviceUsage.USAGE_ALARM, usages[2])
+        assertTrue(PreferredDeviceUsage.shouldRewrite(usages.getValue(2)))
     }
 }
