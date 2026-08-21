@@ -3158,8 +3158,10 @@ class SystemUiBuiltinVolumePanel(
         private val icon: ImageView,
         private val progressView: View,
         private val progressViewBg: View,
-        private val glassBg: View,
-        private val expandBg: View,
+        // OS4 的 VolumeColumn 才有 glass/expand 材质层；OS3（plugin 17.x）没有这两个字段，
+        // 仅用于诊断日志，缺省为 null 不影响任何功能路径。
+        private val glassBg: View?,
+        private val expandBg: View?,
         private val releaseMethod: Method,
         private val updateProgressMethod: Method,
         val packageName: String,
@@ -3206,8 +3208,8 @@ class SystemUiBuiltinVolumePanel(
                         "sliderBg=${slider.background?.javaClass?.name ?: "material"} " +
                         "progress=${progressView.background?.javaClass?.name ?: "material"} " +
                         "progressBg=${progressViewBg.background?.javaClass?.name ?: "none"} " +
-                        "glass=${glassBg.background?.javaClass?.name ?: "none"} " +
-                        "expand=${expandBg.background?.javaClass?.name ?: "none"}",
+                        "glass=${glassBg?.background?.javaClass?.name ?: "none"} " +
+                        "expand=${expandBg?.background?.javaClass?.name ?: "none"}",
                 null,
             )
         }
@@ -3421,10 +3423,12 @@ class SystemUiBuiltinVolumePanel(
                 val progressViewBg =
                     columnClass.getMethod("getProgressViewBg").invoke(column) as? View
                         ?: error("VolumeColumn.getProgressViewBg returned non-View")
-                val glassBg = columnClass.getMethod("getGlassBg").invoke(column) as? View
-                    ?: error("VolumeColumn.getGlassBg returned non-View")
-                val expandBg = columnClass.getMethod("getExpandBg").invoke(column) as? View
-                    ?: error("VolumeColumn.getExpandBg returned non-View")
+                // OS4（plugin 18.x）才有 getGlassBg/getExpandBg；OS3 缺失时仅诊断日志降级，
+                // 不作为列创建的硬性条件。
+                val glassBg = runCatching { columnClass.getMethod("getGlassBg").invoke(column) as? View }
+                    .getOrNull()
+                val expandBg = runCatching { columnClass.getMethod("getExpandBg").invoke(column) as? View }
+                    .getOrNull()
                 val updateSliderRatio = columnClass.getMethod("updateSliderRatio")
                 val setTracking = columnClass.getMethod("setTracking", booleanType)
                 val setMaxLevel = progressView.javaClass.getMethod("setMaxLevel", intType)
