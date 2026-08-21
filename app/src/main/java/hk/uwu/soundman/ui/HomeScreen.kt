@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +58,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import hk.uwu.soundman.R
 import hk.uwu.soundman.data.AppSettings
 import hk.uwu.soundman.data.AppSettingsStore
+import hk.uwu.soundman.data.CrashGuardStore
+import hk.uwu.soundman.data.CrashGuardTripInfo
+import hk.uwu.soundman.data.SystemUiAppSettingsSync
 import hk.uwu.soundman.log.AppLog
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.SwitchDefaults
@@ -66,6 +70,9 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.VolumeUp
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val HomeHyperOsEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private const val HOME_PAGE_MOVE_MS = 360
@@ -89,6 +96,7 @@ fun HomeScreen(
     val about = remember(context) { AppAboutInfo.load(context) }
     var xposed by remember { mutableStateOf(XposedStatusInfo.load()) }
     var settings by remember(settingsStore) { mutableStateOf(settingsStore.read()) }
+    var crashTrip by remember(context) { mutableStateOf(CrashGuardStore.readTrip(context)) }
     var pageName by rememberSaveable { mutableStateOf(HomePage.HOME.name) }
     val page = HomePage.valueOf(pageName)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -97,6 +105,7 @@ fun HomeScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 xposed = XposedStatusInfo.load()
                 settings = settingsStore.read()
+                crashTrip = CrashGuardStore.readTrip(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -150,8 +159,13 @@ fun HomeScreen(
                         context = context,
                         about = about,
                         xposed = xposed,
+                        crashTrip = crashTrip,
                         onOpenOverlay = onOpenOverlay,
                         onOpenSettings = { pageName = HomePage.SETTINGS.name },
+                        onReenableCrashGuard = {
+                            SystemUiAppSettingsSync.persistCrashGuardReenable(context)
+                            crashTrip = CrashGuardStore.readTrip(context)
+                        },
                     )
 
                     HomePage.SETTINGS -> SettingsPage(
@@ -184,8 +198,10 @@ private fun HomePageContent(
     context: Context,
     about: AppAboutInfo,
     xposed: XposedStatusInfo,
+    crashTrip: CrashGuardTripInfo?,
     onOpenOverlay: () -> Unit,
     onOpenSettings: () -> Unit,
+    onReenableCrashGuard: () -> Unit,
 ) {
     Column(
         Modifier
@@ -193,6 +209,17 @@ private fun HomePageContent(
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
+        val activeTrip = crashTrip?.takeIf(CrashGuardTripInfo::active)
+        if (activeTrip != null) {
+            CrashGuardBanner(
+                trip = activeTrip,
+                onReenable = onReenableCrashGuard,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp),
+            )
+            Spacer(Modifier.height(14.dp))
+        }
         if (!xposed.active) {
             InactiveBanner(
                 modifier = Modifier
@@ -252,6 +279,80 @@ private fun InactiveBanner(modifier: Modifier = Modifier) {
         }
     }
 }
+
+@Composable
+private fun CrashGuardBanner(
+    trip: CrashGuardTripInfo,
+    onReenable: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reasonLabel = when (trip.reason) {
+        hk.uwu.soundman.data.CrashGuardContract.REASON_EARLY_CRASH_STREAK ->
+            stringResource(R.string.crash_guard_reason_early_streak)
+        hk.uwu.soundman.data.CrashGuardContract.REASON_CRASH_BURST ->
+            stringResource(R.string.crash_guard_reason_burst)
+        else -> stringResource(R.string.crash_guard_reason_unknown)
+    }
+    GlassSurface(
+        modifier = modifier.fillMaxWidth(),
+        fill = InactiveBannerFill,
+        border = Color.White.copy(alpha = 0.18f),
+        purpose = BlurMaterialPurpose.Hint,
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+            Text(
+                stringResource(R.string.crash_guard_tripped_title),
+                color = InactiveBannerTitle,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.crash_guard_tripped_reason, reasonLabel),
+                color = InactiveBannerHint,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(
+                    R.string.crash_guard_tripped_time,
+                    remember(trip.trippedAtMs) { formatTripTime(trip.trippedAtMs) },
+                ),
+                color = InactiveBannerHint,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.crash_guard_tripped_hint),
+                color = InactiveBannerHint,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            GlassSurface(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = HomeButtonRadius,
+                fill = Color.White.copy(alpha = 0.16f),
+                border = Color.White.copy(alpha = 0.24f),
+                purpose = BlurMaterialPurpose.Action,
+                onClick = onReenable,
+            ) {
+                Text(
+                    stringResource(R.string.crash_guard_reenable),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    color = InactiveBannerTitle,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+private fun formatTripTime(trippedAtMs: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(trippedAtMs))
 
 @Composable
 private fun IdentityCard(

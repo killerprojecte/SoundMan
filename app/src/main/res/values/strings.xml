@@ -23,6 +23,14 @@
     <string name="home_xposed_active">Module activated</string>
     <string name="home_xposed_inactive">Module not activated</string>
     <string name="home_xposed_inactive_hint">Enable this module in the Xposed manager, then select System Framework, System UI, and any other apps that should be affected</string>
+    <string name="crash_guard_tripped_title">System UI crashed repeatedly — features paused</string>
+    <string name="crash_guard_tripped_reason">Cause: %1$s</string>
+    <string name="crash_guard_tripped_time">Time: %1$s</string>
+    <string name="crash_guard_tripped_hint">To protect System UI, SoundMan has stopped hooking it. Features resume after you re-enable and System UI restarts</string>
+    <string name="crash_guard_reason_early_streak">System UI crashed twice shortly after startup</string>
+    <string name="crash_guard_reason_burst">System UI crashed three times within ten minutes</string>
+    <string name="crash_guard_reason_unknown">Repeated System UI crashes</string>
+    <string name="crash_guard_reenable">Re-enable</string>
     <string name="overlay_channel_name">SoundMan overlay</string>
     <string name="overlay_channel_description">Keep the app volume and output device panel visible</string>
     <string name="overlay_notification_title">SoundMan panel is showing</string>

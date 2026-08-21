@@ -7,8 +7,10 @@ import com.highcapable.kavaref.extension.classOf
 import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
 import hk.uwu.soundman.data.AppSettingsDefaults
 import hk.uwu.soundman.data.AppSettingsKeys
+import hk.uwu.soundman.data.CrashGuardContract
 import hk.uwu.soundman.data.SYSTEM_UI_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.hook.core.YLog
+import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiCrashGuard
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginClassLoader
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginClassLoaderAttach
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginHookTargets
@@ -31,9 +33,26 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
     )
     private val pluginClassLoaderReader = SystemUiPluginClassLoader()
     private val pluginClassLoaderAttach = SystemUiPluginClassLoaderAttach()
+    private val crashGuard = SystemUiCrashGuard(
+        reenableAtMs = ::readCrashGuardReenableAtMs,
+        log = ::writeLog,
+    )
 
     override fun onHook() {
+        // 崩溃看门狗是唯一的前置闸门：上一轮崩溃触发禁用后，本进程一个 Hook 都不装，
+        // 让 SystemUI 以纯净状态起稳，等待用户在模块 App 里手动重新启用。
+        if (!crashGuardAdmitted()) return
         PLUGIN_WATCH_TARGETS.forEach(::watchPluginTarget)
+    }
+
+    /**
+     * 看门狗放行判定；看门狗自身不可用（非主进程/内部故障）时一律放行（fail-open）。
+     */
+    private fun crashGuardAdmitted(): Boolean {
+        val decision = runCatching { crashGuard.admit() }
+            .onFailure { YLog.error("Crash guard admit failed", it) }
+            .getOrNull() ?: return true
+        return decision.admitted
     }
 
     private fun watchPluginTarget(target: SystemUiVolumeEntryHookTarget) {
@@ -290,6 +309,32 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
     } catch (error: Throwable) {
         YLog.error("Unable to read hide-system-apps setting through Yuki prefs", error)
         AppSettingsDefaults.HIDE_SYSTEM_APPS_ENABLED
+    }
+
+    /**
+     * 读取用户在模块 App 里最近一次“重新启用”看门狗的时间戳。
+     *
+     * 只在已处于禁用态的启动路径上被调用；读取失败按“从未请求”处理，
+     * 方向安全——宁可多禁用一轮，也不误放行。
+     */
+    private fun readCrashGuardReenableAtMs(): Long = try {
+        val value = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+            .all()[CrashGuardContract.MIRROR_REENABLE_AT]
+        when (value) {
+            null -> 0L
+            is Long -> value
+            is Int -> value.toLong()
+            is String -> value.toLongOrNull() ?: 0L
+            else -> {
+                YLog.warn(
+                    "Invalid ${CrashGuardContract.MIRROR_REENABLE_AT} type=${value.javaClass.name}",
+                )
+                0L
+            }
+        }
+    } catch (error: Throwable) {
+        YLog.error("Unable to read crash guard reenable timestamp through Yuki prefs", error)
+        0L
     }
 
     private fun writeLog(priority: Int, tag: String, message: String, throwable: Throwable?) {

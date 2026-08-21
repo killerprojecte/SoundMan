@@ -111,6 +111,25 @@ object SystemUiAppSettingsSync {
                     "readBack=$readBack",
         )
     }
+
+    /**
+     * 将"重新启用崩溃看门狗"的时间戳同步到跨进程偏好。
+     *
+     * SystemUI 在禁用态启动时读取该时间戳，晚于禁用触发时刻即恢复完整功能；
+     * 写入的是当前时间而非布尔值，天然免疫乱序/回退。
+     */
+    fun persistCrashGuardReenable(context: Context) {
+        val reenableAtMs = System.currentTimeMillis()
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putLong(CrashGuardContract.MIRROR_REENABLE_AT, reenableAtMs)
+        }
+        CrashGuardStore.recordReenable(context, reenableAtMs)
+        AppLog.info(
+            "Persisted crash guard reenable at=$reenableAtMs " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
 }
 
 /** 使用应用独立 SharedPreferences 文件保存设置。 */

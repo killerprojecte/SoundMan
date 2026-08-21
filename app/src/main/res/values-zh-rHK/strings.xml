@@ -19,6 +19,14 @@
     <string name="home_xposed_active">模組已啟用</string>
     <string name="home_xposed_inactive">模組未啟用</string>
     <string name="home_xposed_inactive_hint">請在 Xposed 管理器中啟用模組，並剔選系統框架、系統介面以及其他需要生效的應用程式</string>
+    <string name="crash_guard_tripped_title">系統介面多次崩潰，模組功能已暫停</string>
+    <string name="crash_guard_tripped_reason">原因：%1$s</string>
+    <string name="crash_guard_tripped_time">時間：%1$s</string>
+    <string name="crash_guard_tripped_hint">為保護系統介面，SoundMan 已停止對它的注入。重新啟用並待系統介面重啟後即可恢復</string>
+    <string name="crash_guard_reason_early_streak">系統介面在啟動後短時間內連續崩潰</string>
+    <string name="crash_guard_reason_burst">系統介面在十分鐘內崩潰了三次</string>
+    <string name="crash_guard_reason_unknown">系統介面反覆崩潰</string>
+    <string name="crash_guard_reenable">重新啟用</string>
     <string name="overlay_channel_name">SoundMan 懸浮面板</string>
     <string name="overlay_channel_description">保持應用音量與輸出裝置面板可見</string>
     <string name="overlay_notification_title">SoundMan 面板正在顯示</string>

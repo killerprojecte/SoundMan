@@ -7,8 +7,10 @@ import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Binder
 import android.os.Bundle
 import android.os.Looper
+import android.os.Process
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import hk.uwu.soundman.ipc.PreferredDeviceSync
@@ -266,6 +268,31 @@ class RuleStoreBridgeProvider : ContentProvider() {
                         requiredBundle(extras, RuleStoreBridgeContract.KEY_OUTPUT_TARGET),
                     )
                     setPanelRoute(packageName, uid, target)
+                    Bundle.EMPTY
+                }
+
+                CrashGuardContract.PROVIDER_METHOD -> {
+                    // 本 Provider 无权限导出，崩溃上报必须限定 SystemUI（SYSTEM_UID），
+                    // 否则任意第三方都能伪造"模块把系统界面搞崩了"的横幅吓唬用户。
+                    val callingUid = Binder.getCallingUid()
+                    if (callingUid != Process.SYSTEM_UID) {
+                        throw SecurityException(
+                            "${CrashGuardContract.PROVIDER_METHOD} requires SYSTEM_UID, got uid=$callingUid",
+                        )
+                    }
+                    val trippedAtMs = extras
+                        ?.takeIf { it.containsKey(CrashGuardContract.KEY_TRIPPED_AT) }
+                        ?.getLong(CrashGuardContract.KEY_TRIPPED_AT)
+                        ?.also { require(it > 0L) { "trippedAtMs must be positive" } }
+                        ?: error("Missing ${CrashGuardContract.KEY_TRIPPED_AT}")
+                    val reason = extras.getString(CrashGuardContract.KEY_REASON)
+                        ?.takeIf(String::isNotBlank)
+                        ?: CrashGuardContract.REASON_UNKNOWN
+                    CrashGuardStore.recordTrip(
+                        context ?: error("RuleStoreBridgeProvider has no context"),
+                        trippedAtMs,
+                        reason,
+                    )
                     Bundle.EMPTY
                 }
 
