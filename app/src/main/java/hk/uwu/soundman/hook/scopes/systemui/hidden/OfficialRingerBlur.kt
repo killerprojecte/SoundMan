@@ -3,6 +3,8 @@ package hk.uwu.soundman.hook.scopes.systemui.hidden
 import android.content.Context
 import android.util.Log
 import android.view.View
+import com.highcapable.kavaref.extension.makeAccessible
+import com.highcapable.kavaref.extension.toClassOrNull
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
@@ -310,7 +312,7 @@ class OfficialRingerBlur(
             }
             return null
         }
-        match.isAccessible = true
+        match.makeAccessible()
         methods[key] = match
         return match
     }
@@ -338,14 +340,12 @@ class OfficialRingerBlur(
 
     private fun loadClass(name: String, quiet: Boolean = false): Class<*>? {
         classes[name]?.let { return it }
-        return try {
-            pluginClassLoader.loadClass(name).also { classes[name] = it }
-        } catch (error: ClassNotFoundException) {
-            if (!quiet) {
-                log(Log.ERROR, TAG, "Official blur class missing: $name", error)
-            }
-            null
+        val clazz = name.toClassOrNull(pluginClassLoader)
+        if (clazz == null && !quiet) {
+            log(Log.ERROR, TAG, "Official blur class missing: $name", null)
         }
+        if (clazz != null) classes[name] = clazz
+        return clazz
     }
 
     private data class MethodKey(

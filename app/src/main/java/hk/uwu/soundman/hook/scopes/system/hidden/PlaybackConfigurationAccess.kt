@@ -1,7 +1,8 @@
 package hk.uwu.soundman.hook.scopes.system.hidden
 
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.resolver.MethodResolver
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -74,10 +75,10 @@ class PlaybackConfigurationAccess {
         resolved.getOrPut(config.javaClass) { ResolvedAccess.resolve(config.javaClass) }
 
     private data class ResolvedAccess(
-        val clientUid: Method,
-        val isActive: Method,
-        val playerInterfaceId: Method?,
-        val playerProxy: Method?,
+        val clientUid: MethodResolver<Any>,
+        val isActive: MethodResolver<Any>,
+        val playerInterfaceId: MethodResolver<Any>?,
+        val playerProxy: MethodResolver<Any>?,
     ) {
         companion object {
             fun resolve(clazz: Class<*>): ResolvedAccess = ResolvedAccess(
@@ -95,26 +96,22 @@ class PlaybackConfigurationAccess {
         const val METHOD_GET_PLAYER_INTERFACE_ID = "getPlayerInterfaceId"
         const val METHOD_GET_PLAYER_PROXY = "getPlayerProxy"
 
-        fun requiredMethod(clazz: Class<*>, name: String): Method =
+        fun requiredMethod(clazz: Class<*>, name: String): MethodResolver<Any> =
             optionalMethod(clazz, name)
-                ?: throw IllegalStateException("Missing method $name() on ${clazz.name}")
+                ?: error("Missing method $name() on ${clazz.name}")
 
-        fun optionalMethod(clazz: Class<*>, name: String): Method? {
-            val method = try {
-                clazz.getMethod(name)
-            } catch (publicMissing: NoSuchMethodException) {
-                try {
-                    clazz.getDeclaredMethod(name)
-                } catch (declaredMissing: NoSuchMethodException) {
-                    return null
-                }
+        fun optionalMethod(clazz: Class<*>, name: String): MethodResolver<Any>? {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            return resolved.firstMethodOrNull {
+                name(name)
+                emptyParameters()
+                superclass()
             }
-            method.isAccessible = true
-            return method
         }
 
-        fun invoke(method: Method, instance: Any): Any? = try {
-            method.invoke(instance)
+        fun invoke(method: MethodResolver<Any>, instance: Any): Any? = try {
+            method.copy().of(instance).invoke()
         } catch (error: InvocationTargetException) {
             throw error.targetException ?: error
         }

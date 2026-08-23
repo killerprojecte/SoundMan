@@ -1,12 +1,13 @@
 package hk.uwu.soundman.hook.scopes.systemui.hidden
 
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.resolver.FieldResolver
+import com.highcapable.kavaref.resolver.MethodResolver
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginHookTargets.FIELD_CLASS_LOADER_FACTORY
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginHookTargets.FIELD_PLUGIN_FACTORY
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginHookTargets.GET_PACKAGE
 import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPluginHookTargets.METHOD_GET
-import java.lang.reflect.Field
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -20,8 +21,8 @@ import java.util.concurrent.ConcurrentHashMap
  * 反射理由：factory 具体类型会随 ROM / 插件 reload 变化，因此字段和方法都按 runtime class 查找并缓存。
  */
 class SystemUiPluginClassLoader {
-    private val fields = ConcurrentHashMap<MemberKey, Field>()
-    private val methods = ConcurrentHashMap<MemberKey, Method>()
+    private val fields = ConcurrentHashMap<MemberKey, FieldResolver<Any>>()
+    private val methods = ConcurrentHashMap<MemberKey, MethodResolver<Any>>()
 
     /**
      * 调用 `getPackage()` 读取插件包名。
@@ -84,16 +85,16 @@ class SystemUiPluginClassLoader {
     }
 
     private fun fieldValue(instance: Any, name: String): Any? =
-        fieldOf(instance.javaClass, name).get(instance)
+        fieldOf(instance.javaClass, name).copy().of(instance).getQuietly()
 
-    private fun fieldOf(clazz: Class<*>, name: String): Field =
+    private fun fieldOf(clazz: Class<*>, name: String): FieldResolver<Any> =
         fields.getOrPut(MemberKey(clazz, name)) { resolveDeclaredField(clazz, name) }
 
-    private fun methodOf(clazz: Class<*>, name: String): Method =
+    private fun methodOf(clazz: Class<*>, name: String): MethodResolver<Any> =
         methods.getOrPut(MemberKey(clazz, name)) { resolveNoArgMethod(clazz, name) }
 
-    private fun invoke(method: Method, instance: Any): Any? = try {
-        method.invoke(instance)
+    private fun invoke(method: MethodResolver<Any>, instance: Any): Any? = try {
+        method.copy().of(instance).invoke()
     } catch (error: InvocationTargetException) {
         throw error.targetException ?: error
     }
@@ -104,28 +105,21 @@ class SystemUiPluginClassLoader {
     )
 
     private companion object {
-        fun resolveDeclaredField(clazz: Class<*>, name: String): Field {
-            val field = try {
-                clazz.getDeclaredField(name)
-            } catch (error: NoSuchFieldException) {
-                throw IllegalStateException("Missing field $name on ${clazz.name}", error)
-            }
-            field.isAccessible = true
-            return field
+        fun resolveDeclaredField(clazz: Class<*>, name: String): FieldResolver<Any> {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            return resolved.firstFieldOrNull { name(name) }
+                ?: error("Missing field $name on ${clazz.name}")
         }
 
-        fun resolveNoArgMethod(clazz: Class<*>, name: String): Method {
-            val method = try {
-                clazz.getDeclaredMethod(name)
-            } catch (declaredMissing: NoSuchMethodException) {
-                try {
-                    clazz.getMethod(name)
-                } catch (publicMissing: NoSuchMethodException) {
-                    throw IllegalStateException("Missing method $name() on ${clazz.name}", publicMissing)
-                }
-            }
-            method.isAccessible = true
-            return method
+        fun resolveNoArgMethod(clazz: Class<*>, name: String): MethodResolver<Any> {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            return resolved.firstMethodOrNull {
+                name(name)
+                emptyParameters()
+                superclass()
+            } ?: error("Missing method $name() on ${clazz.name}")
         }
     }
 }

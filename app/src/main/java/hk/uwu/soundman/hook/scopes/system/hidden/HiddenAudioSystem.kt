@@ -1,9 +1,10 @@
 package hk.uwu.soundman.hook.scopes.system.hidden
 
 import android.media.AudioDeviceInfo
-import java.lang.reflect.Field
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.extension.toClass
+import com.highcapable.kavaref.resolver.MethodResolver
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 
 /**
  * 隐藏 `android.media.AudioSystem` 的反射访问面。
@@ -19,13 +20,13 @@ class HiddenAudioSystem(
     className: String = AUDIO_SYSTEM_CLASS,
 ) {
     private val audioSystemClass: Class<*> = loadClass(classLoader, className)
-    private val getDeviceConnectionState: Method
-    private val getDevicesForStream: Method
-    private val setUidDeviceAffinities: Method
-    private val removeUidDeviceAffinities: Method
-    private val adapterGetDefault: Method?
-    private val adapterSetUidDeviceAffinities: Method?
-    private val adapterRemoveUidDeviceAffinities: Method?
+    private val getDeviceConnectionState: MethodResolver<Any>
+    private val getDevicesForStream: MethodResolver<Any>
+    private val setUidDeviceAffinities: MethodResolver<Any>
+    private val removeUidDeviceAffinities: MethodResolver<Any>
+    private val adapterGetDefault: MethodResolver<Any>?
+    private val adapterSetUidDeviceAffinities: MethodResolver<Any>?
+    private val adapterRemoveUidDeviceAffinities: MethodResolver<Any>?
     private val deviceOutByPublicType: Map<Int, Int>
 
     /**
@@ -198,65 +199,59 @@ class HiddenAudioSystem(
         const val METHOD_REMOVE_UID_DEVICE_AFFINITIES = "removeUidDeviceAffinities"
 
         fun loadClass(classLoader: ClassLoader, className: String): Class<*> = try {
-            Class.forName(className, true, classLoader)
-        } catch (error: ClassNotFoundException) {
+            className.toClass(classLoader, initialize = true)
+        } catch (error: Throwable) {
             throw IllegalStateException("Missing class $className", error)
         }
 
         fun staticInt(clazz: Class<*>, name: String): Int {
-            val field = resolveDeclaredField(clazz, name)
-            val value = field.get(null)
-            return value as? Int
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            val field = resolved.firstFieldOrNull { name(name) }
+                ?: error("Missing field $name on ${clazz.name}")
+            val value = field.getQuietly<Int>()
+            return value
                 ?: error("Field ${clazz.name}.$name is not Int: ${value?.javaClass?.name}")
         }
 
-        fun resolveDeclaredField(clazz: Class<*>, name: String): Field {
-            val field = try {
-                clazz.getDeclaredField(name)
-            } catch (error: NoSuchFieldException) {
-                throw IllegalStateException("Missing field $name on ${clazz.name}", error)
-            }
-            field.isAccessible = true
-            return field
-        }
-
-        fun resolveMethod(clazz: Class<*>, name: String, vararg parameterTypes: Class<*>): Method {
-            val method = try {
-                clazz.getDeclaredMethod(name, *parameterTypes)
-            } catch (declaredMissing: NoSuchMethodException) {
-                try {
-                    clazz.getMethod(name, *parameterTypes)
-                } catch (publicMissing: NoSuchMethodException) {
-                    throw IllegalStateException(
-                        "Missing method ${formatMethod(name, parameterTypes)} on ${clazz.name}",
-                        publicMissing,
-                    )
-                }
-            }
-            method.isAccessible = true
+        fun resolveMethod(
+            clazz: Class<*>,
+            name: String,
+            vararg parameterTypes: Class<*>
+        ): MethodResolver<Any> {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            val method = resolved.firstMethodOrNull {
+                name(name)
+                parameters(*parameterTypes)
+            } ?: resolved.firstMethodOrNull {
+                name(name)
+                parameters(*parameterTypes)
+                superclass()
+            } ?: error("Missing method ${formatMethod(name, parameterTypes)} on ${clazz.name}")
             return method
         }
 
-        fun invokeStatic(method: Method, vararg args: Any?): Any? = try {
-            method.invoke(null, *args)
+        fun invokeStatic(method: MethodResolver<Any>, vararg args: Any?): Any? = try {
+            method.invoke(*args)
         } catch (error: InvocationTargetException) {
             throw error.targetException ?: error
         }
 
-        fun invokeStaticInt(method: Method, vararg args: Any?): Int {
+        fun invokeStaticInt(method: MethodResolver<Any>, vararg args: Any?): Int {
             val result = invokeStatic(method, *args)
             return result as? Int
-                ?: error("${method.declaringClass.name}.${method.name} returned non-Int: ${result?.javaClass?.name}")
+                ?: error("${method.self.declaringClass.name}.${method.self.name} returned non-Int: ${result?.javaClass?.name}")
         }
 
-        fun invokeInstanceInt(method: Method, instance: Any, vararg args: Any?): Int {
+        fun invokeInstanceInt(method: MethodResolver<Any>, instance: Any, vararg args: Any?): Int {
             val result = try {
-                method.invoke(instance, *args)
+                method.copy().of(instance).invoke(*args)
             } catch (error: InvocationTargetException) {
                 throw error.targetException ?: error
             }
             return result as? Int
-                ?: error("${method.declaringClass.name}.${method.name} returned non-Int: ${result?.javaClass?.name}")
+                ?: error("${method.self.declaringClass.name}.${method.self.name} returned non-Int: ${result?.javaClass?.name}")
         }
 
         fun formatMethod(name: String, parameterTypes: Array<out Class<*>>): String =

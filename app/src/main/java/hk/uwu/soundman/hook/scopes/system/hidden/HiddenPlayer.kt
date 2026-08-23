@@ -4,9 +4,9 @@ import android.os.DeadObjectException
 import android.os.IBinder
 import android.os.IInterface
 import android.os.RemoteException
-import com.highcapable.kavaref.extension.makeAccessible
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.resolver.MethodResolver
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 
 /**
  * 隐藏 `android.media.IPlayer` 的反射访问面。
@@ -19,9 +19,11 @@ import java.lang.reflect.Method
  */
 class HiddenPlayer(player: Any) {
     private val instance: Any = player
-    private val setVolume: Method = resolveSetVolume(player.javaClass)
-    private val pause: Method? = resolveNoArg(player.javaClass, METHOD_PAUSE, METHOD_TRACK_PAUSE)
-    private val start: Method? = resolveNoArg(player.javaClass, METHOD_START, METHOD_TRACK_START)
+    private val setVolume: MethodResolver<Any> = resolveSetVolume(player.javaClass)
+    private val pause: MethodResolver<Any>? =
+        resolveNoArg(player.javaClass, METHOD_PAUSE, METHOD_TRACK_PAUSE)
+    private val start: MethodResolver<Any>? =
+        resolveNoArg(player.javaClass, METHOD_START, METHOD_TRACK_START)
 
     /**
      * 底层 IPlayer 的 Binder，用于监听播放器进程死亡。
@@ -54,7 +56,7 @@ class HiddenPlayer(player: Any) {
      */
     fun setVolume(volume: Float) {
         try {
-            setVolume.invoke(instance, volume)
+            setVolume.copy().of(instance).invoke(volume)
         } catch (error: InvocationTargetException) {
             throw wrapIfDead(error.targetException ?: error)
         }
@@ -69,12 +71,11 @@ class HiddenPlayer(player: Any) {
      * @return 是否成功发出 pause+start；播放器进程已死亡或缺少方法时返回 false
      */
     fun restartForReroute(): Boolean {
-        val pauseMethod = pause
-        val startMethod = start
-        if (pauseMethod == null || startMethod == null) return false
+        val pauseMethod = pause ?: return false
+        val startMethod = start ?: return false
         try {
-            pauseMethod.invoke(instance)
-            startMethod.invoke(instance)
+            pauseMethod.copy().of(instance).invoke()
+            startMethod.copy().of(instance).invoke()
             return true
         } catch (error: InvocationTargetException) {
             val target = error.targetException ?: error
@@ -92,41 +93,28 @@ class HiddenPlayer(player: Any) {
         const val METHOD_TRACK_PAUSE = "trackPause"
         const val METHOD_TRACK_START = "trackStart"
 
-        fun resolveNoArg(playerClass: Class<*>, vararg names: String): Method? {
-            names.forEach { name ->
-                val method = try {
-                    playerClass.getMethod(name)
-                } catch (publicMissing: NoSuchMethodException) {
-                    try {
-                        playerClass.getDeclaredMethod(name)
-                    } catch (declaredMissing: NoSuchMethodException) {
-                        null
-                    }
+        fun resolveNoArg(playerClass: Class<*>, vararg names: String): MethodResolver<Any>? {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (playerClass as Class<Any>).resolve().optional(silent = true)
+            for (name in names) {
+                val method = resolved.firstMethodOrNull {
+                    name(name)
+                    emptyParameters()
+                    superclass()
                 }
-                if (method != null) {
-                    method.makeAccessible()
-                    return method
-                }
+                if (method != null) return method
             }
             return null
         }
 
-        fun resolveSetVolume(playerClass: Class<*>): Method {
-            val parameterTypes = arrayOf(Float::class.javaPrimitiveType!!)
-            val method = try {
-                playerClass.getMethod(METHOD_SET_VOLUME, *parameterTypes)
-            } catch (publicMissing: NoSuchMethodException) {
-                try {
-                    playerClass.getDeclaredMethod(METHOD_SET_VOLUME, *parameterTypes)
-                } catch (declaredMissing: NoSuchMethodException) {
-                    throw IllegalStateException(
-                        "Missing method $METHOD_SET_VOLUME(float) on ${playerClass.name}",
-                        declaredMissing,
-                    )
-                }
-            }
-            method.makeAccessible()
-            return method
+        fun resolveSetVolume(playerClass: Class<*>): MethodResolver<Any> {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (playerClass as Class<Any>).resolve().optional(silent = true)
+            return resolved.firstMethodOrNull {
+                name(METHOD_SET_VOLUME)
+                parameters(Float::class.javaPrimitiveType!!)
+                superclass()
+            } ?: error("Missing method $METHOD_SET_VOLUME(float) on ${playerClass.name}")
         }
 
         /**

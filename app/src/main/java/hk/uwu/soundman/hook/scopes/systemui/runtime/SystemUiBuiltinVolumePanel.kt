@@ -36,6 +36,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.toDrawable
+import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.kavaref.extension.classOf
 import com.highcapable.kavaref.extension.makeAccessible
 import com.highcapable.kavaref.extension.toClass
@@ -3026,16 +3027,10 @@ class SystemUiBuiltinVolumePanel(
         }
 
         private fun readField(owner: Any, name: String): Any? {
-            var type: Class<*>? = owner.javaClass
-            while (type != null) {
-                val field = runCatching { type.getDeclaredField(name) }.getOrNull()
-                if (field != null) {
-                    field.makeAccessible()
-                    return field.get(owner)
-                }
-                type = type.superclass
-            }
-            error("Field $name was not found on ${owner.javaClass.name}")
+            val field = owner.javaClass.resolve().optional(silent = true)
+                .firstFieldOrNull { name(name); superclass() }
+                ?: error("Field $name was not found on ${owner.javaClass.name}")
+            return field.copy().of(owner).getQuietly()
         }
 
         private data class DismissEntry(

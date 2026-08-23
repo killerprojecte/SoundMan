@@ -1,6 +1,7 @@
 package hk.uwu.soundman.hook.scopes.system.hidden
 
-import java.lang.reflect.Field
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.resolver.FieldResolver
 
 /**
  * 从 `PlayerBase.PlayerIdCard` 取出隐藏 IPlayer 的访问器。
@@ -13,7 +14,8 @@ class HiddenPlayerAccess(
     playerIdCardClass: Class<*>,
 ) {
     private val playerIdCardClass: Class<*> = playerIdCardClass
-    private val iPlayerField: Field = resolveDeclaredField(playerIdCardClass, FIELD_I_PLAYER)
+    private val iPlayerField: FieldResolver<Any> =
+        resolveDeclaredField(playerIdCardClass, FIELD_I_PLAYER)
 
     /**
      * 读取 card 上的 `mIPlayer` 并包装成 [HiddenPlayer]。
@@ -23,11 +25,11 @@ class HiddenPlayerAccess(
      */
     fun fromPlayerIdCard(card: Any): HiddenPlayer? {
         val field = resolveIPlayerField(card.javaClass)
-        val player = field.get(card) ?: return null
+        val player = field.copy().of(card).getQuietly() ?: return null
         return HiddenPlayer(player)
     }
 
-    private fun resolveIPlayerField(cardClass: Class<*>): Field {
+    private fun resolveIPlayerField(cardClass: Class<*>): FieldResolver<Any> {
         if (cardClass == playerIdCardClass) return iPlayerField
         return resolveDeclaredField(cardClass, FIELD_I_PLAYER)
     }
@@ -35,14 +37,11 @@ class HiddenPlayerAccess(
     private companion object {
         const val FIELD_I_PLAYER = "mIPlayer"
 
-        fun resolveDeclaredField(clazz: Class<*>, name: String): Field {
-            val field = try {
-                clazz.getDeclaredField(name)
-            } catch (error: NoSuchFieldException) {
-                throw IllegalStateException("Missing field $name on ${clazz.name}", error)
-            }
-            field.isAccessible = true
-            return field
+        fun resolveDeclaredField(clazz: Class<*>, name: String): FieldResolver<Any> {
+            @Suppress("UNCHECKED_CAST")
+            val resolved = (clazz as Class<Any>).resolve().optional(silent = true)
+            return resolved.firstFieldOrNull { name(name) }
+                ?: error("Missing field $name on ${clazz.name}")
         }
     }
 }

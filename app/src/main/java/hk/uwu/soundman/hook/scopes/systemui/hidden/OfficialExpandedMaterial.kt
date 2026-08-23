@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.drawable.Drawable
 import android.util.Log
 import android.view.View
+import com.highcapable.kavaref.extension.makeAccessible
+import com.highcapable.kavaref.extension.toClassOrNull
 import java.lang.reflect.InvocationTargetException
 
 /**
@@ -192,7 +194,7 @@ class OfficialExpandedMaterial(
             }
             return FAILED
         }
-        method.isAccessible = true
+        method.makeAccessible()
         return try {
             method.invoke(target, *args)
         } catch (error: InvocationTargetException) {
@@ -218,15 +220,11 @@ class OfficialExpandedMaterial(
     }
 
     private fun invokeOptional(className: String, methodName: String, vararg args: Any?): Any? {
-        val clazz = try {
-            classLoader.loadClass(className)
-        } catch (_: ClassNotFoundException) {
-            return FAILED
-        }
+        val clazz = className.toClassOrNull(classLoader) ?: return FAILED
         val method = (clazz.methods.asSequence() + clazz.declaredMethods.asSequence()).firstOrNull {
             it.name == methodName && parametersMatch(it.parameterTypes, args)
         } ?: return FAILED
-        method.isAccessible = true
+        method.makeAccessible()
         return try {
             method.invoke(null, *args)
         } catch (error: Throwable) {
@@ -240,13 +238,12 @@ class OfficialExpandedMaterial(
         }
     }
 
-    private fun loadClass(name: String, quiet: Boolean = false): Class<*>? = try {
-        classLoader.loadClass(name)
-    } catch (error: ClassNotFoundException) {
-        if (!quiet) {
-            log(Log.ERROR, TAG, "Official material class missing: $name", error)
+    private fun loadClass(name: String, quiet: Boolean = false): Class<*>? {
+        val clazz = name.toClassOrNull(classLoader)
+        if (clazz == null && !quiet) {
+            log(Log.ERROR, TAG, "Official material class missing: $name", null)
         }
-        null
+        return clazz
     }
 
     private fun parametersMatch(types: Array<Class<*>>, args: Array<out Any?>): Boolean {

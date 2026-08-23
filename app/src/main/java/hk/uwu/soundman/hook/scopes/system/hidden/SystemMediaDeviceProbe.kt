@@ -2,8 +2,8 @@ package hk.uwu.soundman.hook.scopes.system.hidden
 
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.kavaref.extension.classOf
-import com.highcapable.kavaref.extension.makeAccessible
 import com.highcapable.kavaref.extension.toClass
 import hk.uwu.soundman.hook.core.YLog
 import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe.Companion.createForAppProcess
@@ -126,12 +126,12 @@ class SystemMediaDeviceProbe(
         private fun createGetDevicesForStreamFunction(): ((Int) -> Int)? {
             try {
                 val audioSystemClass = "android.media.AudioSystem".toClass()
-                val method = audioSystemClass.getDeclaredMethod(
-                    "getDevicesForStream",
-                    classOf<Int>(),
-                )
-                method.makeAccessible()
-                return { streamType: Int -> method.invoke(null, streamType) as Int }
+                val method = audioSystemClass.resolve().optional(silent = true)
+                    .firstMethodOrNull {
+                        name("getDevicesForStream")
+                        parameters(classOf<Int>())
+                    } ?: return null
+                return { streamType: Int -> method.invoke(streamType) as Int }
             } catch (t: Throwable) {
                 YLog.error("[probe] Cannot reflect AudioSystem.getDevicesForStream", t)
                 return null

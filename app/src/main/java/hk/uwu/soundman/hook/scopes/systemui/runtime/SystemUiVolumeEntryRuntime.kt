@@ -15,11 +15,13 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.core.view.isVisible
-import com.highcapable.kavaref.extension.makeAccessible
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.kavaref.extension.toClassOrNull
 import hk.uwu.soundman.R
 import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialRingerBlur
 import hk.uwu.soundman.overlay.OverlayOpenRequest
@@ -50,6 +52,7 @@ class SystemUiVolumeEntryRuntime(
     private val insertionsIdle = lifecycleLock.newCondition()
     private var activeInsertions = 0
     private var officialBlur: OfficialRingerBlur? = null
+    private var pluginClassLoader: ClassLoader? = null
 
     /**
      * 插件 ClassLoader 就绪后安装 live MiBlur 入口。
@@ -57,6 +60,7 @@ class SystemUiVolumeEntryRuntime(
      * `MiBlurCompat` / `Util` 只在插件 ClassLoader 里。
      */
     fun attachPluginClassLoader(pluginClassLoader: ClassLoader) {
+        this.pluginClassLoader = pluginClassLoader
         officialBlur = OfficialRingerBlur(pluginClassLoader, log)
     }
 
@@ -99,6 +103,7 @@ class SystemUiVolumeEntryRuntime(
 
     private fun cleanupEntry(entry: View): Boolean {
         return try {
+            removeDragFollow(entry)
             (entry.parent as? ViewGroup)?.removeView(entry)
             entry.setOnClickListener(null)
             clearVisuals(entry)
@@ -375,6 +380,7 @@ class SystemUiVolumeEntryRuntime(
                         ::cleanupEntryAndPanel,
                         ::openPanel,
                         officialBlur,
+                        pluginClassLoader,
                     )
                 }
             } catch (throwable: Throwable) {
@@ -517,6 +523,230 @@ class SystemUiVolumeEntryRuntime(
             "com.android.systemui.miui.volume.MiuiVolumeDialogView"
         private const val REPEATED_LOG_INTERVAL_MILLIS = 2_000L
 
+        /**
+         * 官方 SlideContainerAnim 动画驱动的容器资源名，按优先级查找。
+         *
+         * `miui_volume_content` 对应 VolumePanelViewController.mVolumeContentView，
+         * 是折叠态 getVolumeContainer() 的默认返回值。
+         * `volume_dialog_content` 是部分 HyperOS 版本的等价资源名。
+         */
+        private val ANIMATED_CONTAINER_RESOURCE_NAMES: List<String> = listOf(
+            "miui_volume_content",
+            "volume_dialog_content",
+        )
+
+        /**
+         * 用作 [View.setTag] key 的宿主 R.id 字段名。
+         *
+         * 官方 QSTileItemIconView 用 `R.id.qs_icon_state_tag` 做 tag key。
+         * SoundMan 通过反射读取宿主 `R.id` 类的静态 int 字段获取同一值，
+         * 不用 `getIdentifier`。
+         */
+        private const val TAG_KEY_FIELD_NAME = "qs_icon_state_tag"
+
+        /**
+         * 宿主 R.id 类的全名。
+         *
+         * 原版 `QSTileItemIconView` 使用 `import miui.systemui.controlcenter.R`，
+         * `qs_icon_state_tag` 定义在该 R 的 id 内部类中。
+         */
+        private const val R_ID_CLASS_NAME = "miui.systemui.controlcenter.R\$id"
+
+        /**
+         * 反射读取宿主 R.id 的静态 int 值，缓存结果。
+         *
+         * @param pluginClassLoader 宿主/插件 ClassLoader
+         * @return R.id 字段值；找不到时返回 [View.NO_ID]
+         */
+        @Volatile
+        private var cachedTagKey: Int = View.NO_ID
+
+        private fun resolveTagKey(pluginClassLoader: ClassLoader?): Int {
+            if (cachedTagKey != View.NO_ID) return cachedTagKey
+            if (pluginClassLoader == null) return View.NO_ID
+            val clazz = R_ID_CLASS_NAME.toClassOrNull(pluginClassLoader) ?: return View.NO_ID
+            val field = clazz.resolve().optional(silent = true)
+                .firstFieldOrNull { name = TAG_KEY_FIELD_NAME }
+            val id = field?.getQuietly<Int>() ?: 0
+            if (id != 0) {
+                cachedTagKey = id
+                return id
+            }
+            return View.NO_ID
+        }
+
+        /**
+         * 安装拖拽动画跟随监听器，使入口按钮跟随官方音量侧栏的 SlideContainerAnim 缩放/位移。
+         *
+         * 动机：官方 VolumePanelViewController.initAnimListener() 的 SeekBarAnimListener
+         * 回调 setScale/setVolY 只对 getVolumeContainer() 返回的视图（通常是
+         * mVolumeContentView）应用缩放和位移。SoundMan 入口按钮虽然插入在音量条上方
+         * 的同一父容器中，但可能不在 getVolumeContainer() 返回的视图内部（例如
+         * mShouldTempBeVisible 时 getVolumeContainer() 返回 mTempColumnContainer），
+         * 导致入口按钮不跟随拖拽动画。
+         *
+         * 方案：在每帧绘制前将入口按钮的 scaleX/scaleY/translationY 与动画容器同步。
+         * 使用 OnAttachStateChangeListener 管理监听器生命周期，避免 ViewTreeObserver
+         * 失效后监听器丢失。
+         *
+         * @param entry 已插入的入口按钮
+         * @param root 音量侧栏根视图（MiuiRingerModeLayout）
+         * @param pluginClassLoader 宿主/插件 ClassLoader，用于反射读取 R.id
+         * @param log 日志函数
+         */
+        private fun installDragFollow(
+            entry: View,
+            root: View,
+            pluginClassLoader: ClassLoader?,
+            log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
+        ) {
+            val packages = SystemUiVolumeEntryLayout.resourcePackages(root.context.packageName)
+            val animatedContainer = findAnimatedContainer(entry, root, packages)
+            if (animatedContainer == null) {
+                log(
+                    Log.WARN,
+                    TAG,
+                    "Drag follow skipped: animated container not found for entry",
+                    null
+                )
+                return
+            }
+            log(
+                Log.INFO,
+                TAG,
+                "Installing drag follow: entry=${entry.javaClass.name}@${
+                    Integer.toHexString(
+                        System.identityHashCode(
+                            entry
+                        )
+                    )
+                } " +
+                        "container=${animatedContainer.javaClass.name}@${
+                            Integer.toHexString(
+                                System.identityHashCode(
+                                    animatedContainer
+                                )
+                            )
+                        }",
+                null,
+            )
+
+            val preDrawListener = ViewTreeObserver.OnPreDrawListener {
+                if (!entry.isVisible || !entry.isAttachedToWindow) {
+                    return@OnPreDrawListener true
+                }
+                entry.scaleX = animatedContainer.scaleX
+                entry.scaleY = animatedContainer.scaleY
+                entry.translationY = animatedContainer.translationY
+                true
+            }
+
+            val attachListener = object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    val observer = v.viewTreeObserver
+                    if (observer.isAlive) {
+                        observer.addOnPreDrawListener(preDrawListener)
+                    }
+                }
+
+                override fun onViewDetachedFromWindow(v: View) {
+                    val observer = v.viewTreeObserver
+                    if (observer.isAlive) {
+                        observer.removeOnPreDrawListener(preDrawListener)
+                    }
+                }
+            }
+
+            val tagKey = resolveTagKey(pluginClassLoader)
+            if (tagKey == View.NO_ID) {
+                log(
+                    Log.ERROR,
+                    TAG,
+                    "Drag follow skipped: R.id.$TAG_KEY_FIELD_NAME not found via reflection",
+                    null
+                )
+                return
+            }
+
+            entry.addOnAttachStateChangeListener(attachListener)
+            if (entry.isAttachedToWindow) {
+                val observer = entry.viewTreeObserver
+                if (observer.isAlive) {
+                    observer.addOnPreDrawListener(preDrawListener)
+                }
+            }
+
+            entry.setTag(tagKey, Pair(preDrawListener, attachListener))
+        }
+
+        /**
+         * 移除拖拽动画跟随监听器。
+         */
+        private fun removeDragFollow(entry: View) {
+            val tagKey = cachedTagKey
+            if (tagKey == View.NO_ID) return
+            val tag = entry.getTag(tagKey) as? Pair<*, *> ?: return
+            val preDrawListener = tag.first as? ViewTreeObserver.OnPreDrawListener
+            val attachListener = tag.second as? View.OnAttachStateChangeListener
+            if (preDrawListener != null && entry.isAttachedToWindow) {
+                val observer = entry.viewTreeObserver
+                if (observer.isAlive) {
+                    observer.removeOnPreDrawListener(preDrawListener)
+                }
+            }
+            if (attachListener != null) {
+                entry.removeOnAttachStateChangeListener(attachListener)
+            }
+            entry.setTag(tagKey, null)
+        }
+
+        /**
+         * 查找官方音量侧栏中被 SlideContainerAnim 动画驱动的容器视图。
+         *
+         * 优先从入口按钮向上搜索 miui_volume_content / volume_dialog_content；
+         * 找不到则从根视图的父级向下搜索（动画容器与根视图是兄弟节点）。
+         */
+        private fun findAnimatedContainer(
+            entry: View,
+            root: View,
+            packages: List<String>,
+        ): View? {
+            var current: View? = entry.parent as? View
+            while (current != null) {
+                if (isAnimatedContainerId(current, packages)) return current
+                current = current.parent as? View
+            }
+            val rootParent =
+                root.parent as? View ?: return findAnimatedContainerDownward(root, packages)
+            return findAnimatedContainerDownward(rootParent, packages)
+        }
+
+        private fun isAnimatedContainerId(view: View, packages: List<String>): Boolean {
+            if (view.id == View.NO_ID) return false
+            val resources = view.context.resources
+            return ANIMATED_CONTAINER_RESOURCE_NAMES.any { name ->
+                packages.any { pkg ->
+                    runCatching {
+                        resources.getIdentifier(name, "id", pkg)
+                    }.getOrDefault(0) == view.id
+                }
+            }
+        }
+
+        private fun findAnimatedContainerDownward(
+            view: View,
+            packages: List<String>,
+        ): View? {
+            if (isAnimatedContainerId(view, packages)) return view
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    val found = findAnimatedContainerDownward(view.getChildAt(index), packages)
+                    if (found != null) return found
+                }
+            }
+            return null
+        }
+
         private fun insertEntry(
             root: View,
             anchor: View,
@@ -528,6 +758,7 @@ class SystemUiVolumeEntryRuntime(
             cleanup: (View) -> Boolean,
             openOverlay: (Context, String, View) -> Unit,
             officialBlur: OfficialRingerBlur?,
+            pluginClassLoader: ClassLoader?,
         ) {
             if (isClosing()) return
             if (!anchor.isLaidOut || anchor.measuredWidth <= 0 || anchor.measuredHeight <= 0) {
@@ -612,6 +843,7 @@ class SystemUiVolumeEntryRuntime(
                     cleanup(entry)
                     return
                 }
+                installDragFollow(entry, root, pluginClassLoader, log)
                 entry.tag = ENTRY_TAG
                 val action = if (existing === entry) "adopted" else "inserted"
                 log(
@@ -1337,16 +1569,19 @@ private class SystemUiOfficialDismissHookBridge(
             return false
         }
         return try {
+            val resolved = owner.javaClass.resolve().optional(silent = true)
             // 确保 mExpanded=true，使 computeTimeoutH() 返回展开状态的长超时（5000ms）
             // 而非折叠状态的短超时。
-            val expandedField = owner.javaClass.getDeclaredField("mExpanded")
-            expandedField.makeAccessible()
-            if (!expandedField.getBoolean(owner)) {
-                expandedField.setBoolean(owner, true)
+            val expandedField = resolved.firstFieldOrNull { name = "mExpanded" }
+                ?: error("mExpanded field not found on ${owner.javaClass.name}")
+            expandedField.of(owner)
+            if (expandedField.getQuietly<Boolean>() != true) {
+                expandedField.setQuietly(true)
             }
-            val method = owner.javaClass.getDeclaredMethod("rescheduleTimeoutH")
-            method.makeAccessible()
-            method.invoke(owner)
+            val method = resolved.firstMethodOrNull { name = "rescheduleTimeoutH" }
+                ?: error("rescheduleTimeoutH method not found on ${owner.javaClass.name}")
+            method.of(owner)
+            method.invokeQuietly()
             true
         } catch (throwable: Throwable) {
             log(Log.ERROR, TAG, "Official rescheduleTimeoutH failed", throwable)

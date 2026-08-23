@@ -431,8 +431,10 @@ object PreferredDeviceHooker : YukiBaseHooker() {
             )
             return
         }
-        val field = builder.javaClass.getDeclaredField("mAttributes").apply { isAccessible = true }
-        val attributes = field.get(builder) as? AudioAttributes ?: run {
+        val field = builder.javaClass.resolve().optional(silent = true)
+            .firstFieldOrNull { name("mAttributes"); superclass() }
+            ?: error("mAttributes field not found on ${builder.javaClass.name}")
+        val attributes = field.copy().of(builder).getQuietly() as? AudioAttributes ?: run {
             YLog.debug("[route] Builder mAttributes missing uid=$uid")
             return
         }
@@ -444,7 +446,8 @@ object PreferredDeviceHooker : YukiBaseHooker() {
             "[route] disguise Builder usage ${PreferredDeviceUsage.name(attributes.usage)}->" +
                     "${PreferredDeviceUsage.name(usage)} uid=$uid",
         )
-        field.set(builder, AudioAttributes.Builder(attributes).setUsage(usage).build())
+        field.copy().of(builder)
+            .setQuietly(AudioAttributes.Builder(attributes).setUsage(usage).build())
     }
 
     private fun registerTrack(track: AudioTrack) {
@@ -639,14 +642,13 @@ object PreferredDeviceHooker : YukiBaseHooker() {
     @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
     private fun currentApplication(): Application? {
         application?.let { return it }
-        val found = try {
-            Class.forName("android.app.ActivityThread")
-                .getDeclaredMethod("currentApplication")
-                .apply { isAccessible = true }
-                .invoke(null) as? Application
-        } catch (_: Throwable) {
-            null
-        }
+        val found = runCatching {
+            val clazz = "android.app.ActivityThread".toClassOrNull() ?: return@runCatching null
+            val method = clazz.resolve().optional(silent = true)
+                .firstMethodOrNull { name("currentApplication"); emptyParameters() }
+                ?: return@runCatching null
+            method.invoke() as? Application
+        }.getOrNull()
         if (found != null) application = found
         return found
     }
