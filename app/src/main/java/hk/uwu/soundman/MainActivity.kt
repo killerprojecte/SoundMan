@@ -76,6 +76,9 @@ class MainActivity : ComponentActivity() {
                     AppLog.error("Unable to rebroadcast after alarm-first setting change", error)
                 }
             },
+            volumePercentMirror = { enabled ->
+                SystemUiAppSettingsSync.persistVolumePercentEnabled(this, enabled)
+            },
         )
         try {
             SystemUiAppSettingsSync.persistBuiltinPanelEnabled(
@@ -107,6 +110,17 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize alarm-first setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistVolumePercentEnabled(
+                this,
+                settingsStore.read().volumePercentEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize volume-percent setting during startup",
                 error
             )
         }

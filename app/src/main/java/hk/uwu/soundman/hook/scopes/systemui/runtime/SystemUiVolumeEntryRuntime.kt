@@ -35,6 +35,7 @@ class SystemUiVolumeEntryRuntime(
     private val log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
     private val builtinPanelEnabled: () -> Boolean = { false },
     private val hideSystemAppsEnabled: () -> Boolean = { false },
+    private val volumePercentEnabled: () -> Boolean = { false },
 ) {
     private val officialDismissHook = SystemUiOfficialDismissHookBridge(log)
     private val builtinPanel = SystemUiBuiltinVolumePanel(
@@ -42,6 +43,7 @@ class SystemUiVolumeEntryRuntime(
         hookDismiss = officialDismissHook::dismiss,
         rescheduleOfficialTimeout = officialDismissHook::rescheduleTimeout,
         hideSystemAppsEnabled = hideSystemAppsEnabled,
+        volumePercentEnabled = volumePercentEnabled,
     )
     private val trackedEntries = ArrayList<TrackedEntry>()
     private val pendingInsertions = ArrayList<PendingInsertion>()

@@ -47,6 +47,7 @@ import hk.uwu.soundman.data.PanelPlaybackSnapshot
 import hk.uwu.soundman.data.PanelPlaybackStatus
 import hk.uwu.soundman.data.ProviderPanelPlayback
 import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialExpandedMaterial
+import hk.uwu.soundman.hook.scopes.systemui.runtime.SystemUiBuiltinVolumePanel.Companion.MORE_BUTTON_COLOR_NAMES
 import hk.uwu.soundman.model.AudioOutputDevice
 import hk.uwu.soundman.model.OutputDeviceType
 import hk.uwu.soundman.model.OutputTarget
@@ -69,6 +70,7 @@ class SystemUiBuiltinVolumePanel(
     private val hookDismiss: () -> Boolean,
     private val rescheduleOfficialTimeout: () -> Boolean,
     private val hideSystemAppsEnabled: () -> Boolean = { false },
+    private val volumePercentEnabled: () -> Boolean = { false },
 ) {
     fun closeFor(sourceView: View) {
         try {
@@ -129,6 +131,7 @@ class SystemUiBuiltinVolumePanel(
                 hookDismiss = hookDismiss,
                 rescheduleOfficialTimeout = rescheduleOfficialTimeout,
                 hideSystemAppsEnabled = hideSystemAppsEnabled,
+                volumePercentEnabled = volumePercentEnabled,
                 onClosed = { closedSession ->
                     synchronized(sessions) {
                         if (sessions[dialog] === closedSession) sessions.remove(dialog)
@@ -177,6 +180,7 @@ class SystemUiBuiltinVolumePanel(
         private val hookDismiss: () -> Boolean,
         private val rescheduleOfficialTimeout: () -> Boolean,
         private val hideSystemAppsEnabled: () -> Boolean,
+        private val volumePercentEnabled: () -> Boolean,
         private val onClosed: (Session) -> Unit,
     ) {
         private val closed = AtomicBoolean(false)
@@ -1284,6 +1288,10 @@ class SystemUiBuiltinVolumePanel(
             // 官方 VolumeColumn 需要传入 parent 完成 initColumn 挂载；wrapper 会重新把
             // official.view 直接 addView 进自己并强制拉伸到 officialWidth × sliderHeight，
             // 这里只给一个临时容器供官方初始化使用。
+            // 百分比文字在 create 之前创建，以便 onPercentChanged 回调捕获引用。
+            val percentTextView = if (volumePercentEnabled()) {
+                buildPercentTextView(row.state.volumePercent)
+            } else null
             val official = OfficialVolumeColumn.create(
                 classLoader = pluginClassLoader,
                 context = targetContext,
@@ -1303,9 +1311,13 @@ class SystemUiBuiltinVolumePanel(
                         throwable
                     )
                 },
+                onPercentChanged = percentTextView?.let { tv ->
+                    { percent -> tv.text = "$percent%" }
+                },
             )
             official.prepareStandaloneColumn(row.state.packageName, log)
             officialColumns += official
+            official.percentTextView = percentTextView
             val pixelSizes =
                 SystemUiColumnPixelSizes.fromDensity(targetContext.resources.displayMetrics.density)
             val officialWidth = resolveColumnDimension(
@@ -1388,6 +1400,16 @@ class SystemUiBuiltinVolumePanel(
                         Gravity.LEFT or Gravity.TOP,
                     ),
                 )
+                if (percentTextView != null) {
+                    addView(
+                        percentTextView,
+                        FrameLayout.LayoutParams(
+                            appIconSlotSize,
+                            dp(PERCENT_TEXT_HEIGHT_DP),
+                            Gravity.LEFT or Gravity.TOP,
+                        ),
+                    )
+                }
             }
             val officialContainer = FrameLayout(targetContext).apply {
                 background = null
@@ -1435,6 +1457,20 @@ class SystemUiBuiltinVolumePanel(
                     leftMargin = left
                     topMargin = rawSliderBottom - appIconSlotSize - overlayVerticalInset
                 }
+                // 百分比文字定位在 slider 垂直中心。
+                if (percentTextView != null) {
+                    val percentTextHeight = dp(PERCENT_TEXT_HEIGHT_DP)
+                    val sliderCenter = rawSliderTop + (rawSliderBottom - rawSliderTop) / 2
+                    percentTextView.layoutParams = FrameLayout.LayoutParams(
+                        appIconSlotSize,
+                        percentTextHeight,
+                        Gravity.LEFT or Gravity.TOP,
+                    ).apply {
+                        leftMargin = left
+                        topMargin = sliderCenter - percentTextHeight / 2
+                    }
+                    percentTextView.requestLayout()
+                }
                 overlaysPositioned = true
                 moreButton.requestLayout()
                 appIcon.requestLayout()
@@ -1442,7 +1478,8 @@ class SystemUiBuiltinVolumePanel(
                     Log.DEBUG,
                     TAG,
                     "Official overlay slots top=${rawSliderTop} bottom=${rawSliderBottom} " +
-                            "more=${moreButton.top} icon=${appIcon.top}",
+                            "more=${moreButton.top} icon=${appIcon.top}" +
+                            if (percentTextView != null) " percent=${percentTextView.top}" else "",
                     null,
                 )
             }
@@ -2533,6 +2570,32 @@ class SystemUiBuiltinVolumePanel(
                 )
             }
 
+        /**
+         * 构建音量百分比文字视图，显示在音量条垂直中心。
+         *
+         * 取色与渲染方式完全参考"更多按钮"（[applyOfficialExpandButtonStyle] /
+         * [applyOfficialExpandButtonBlend]）：
+         * - bionics 高级材质下不额外上色，走官方 blend 让文字与玻璃背景融合；
+         * - 否则用 [MORE_BUTTON_COLOR_NAMES] 取色设为文字颜色，并关闭 blur。
+         *
+         * 展示层属性与 [appIcon] 一致：禁用交互与无障碍焦点，不阻挡 slider 拖动。
+         */
+        private fun buildPercentTextView(percent: Int): TextView {
+            val tv = TextView(targetContext).apply {
+                text = "$percent%"
+                textSize = 12f
+                paint.isFakeBoldText = true
+                gravity = Gravity.CENTER
+                isClickable = false
+                isFocusable = false
+                isEnabled = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                setPadding(0, 0, 0, 0)
+            }
+            applyOfficialExpandButtonStyleToText(tv)
+            return tv
+        }
+
         private fun buildIconButton(
             icon: Drawable,
             description: String,
@@ -2757,9 +2820,21 @@ class SystemUiBuiltinVolumePanel(
             }
         }
 
-        /** 参考官方 MiuiVolumeDialogView.initExpandButtonBlend：高级材质走官方 blend，否则关 blur。 */
+        /**
+         * 参考官方 MiuiVolumeDialogView.initExpandButtonBlend：高级材质走官方 blend，否则关 blur。
+         *
+         * @param onBlendFallback blend 失败时的静态取色回退；ImageView 用 setImageTintList，
+         *   TextView 用 setTextColor。
+         */
         @SuppressLint("PrivateApi")
-        private fun applyOfficialExpandButtonBlend(button: ImageView) {
+        private fun applyOfficialExpandButtonBlend(
+            button: View,
+            onBlendFallback: (View) -> Unit = { view ->
+                val tint = resolvePluginColor(MORE_BUTTON_COLOR_NAMES)
+                    ?: Color.argb(0xCC, 0xFF, 0xFF, 0xFF)
+                (view as? ImageView)?.setImageTintList(ColorStateList.valueOf(tint))
+            },
+        ) {
             val advanced = runCatching {
                 val util = pluginClassLoader.loadClass("com.android.systemui.miui.volume.Util")
                 val method = util.methods.firstOrNull {
@@ -2802,10 +2877,54 @@ class SystemUiBuiltinVolumePanel(
                     "Official expand-button blend failed; falling back to static tint",
                     error
                 )
-                // blend 失败时回到静态取色，保证图标可见。
+                // blend 失败时回到静态取色，保证可见。
+                onBlendFallback(button)
+            }
+        }
+
+        /**
+         * 为百分比文字视图应用与"更多按钮"完全一致的取色与渲染逻辑。
+         *
+         * 与 [applyOfficialExpandButtonStyle] 的唯一区别：用 [TextView.setTextColor] 代替
+         * `ImageView.setImageTintList`；blend 路径完全相同（[applyOfficialExpandButtonBlend]
+         * 对任意 View 均适用）。
+         */
+        @SuppressLint("PrivateApi")
+        private fun applyOfficialExpandButtonStyleToText(textView: TextView) {
+            val bionics = runCatching {
+                val util = pluginClassLoader.loadClass("com.android.systemui.miui.volume.Util")
+                val method = util.methods.firstOrNull {
+                    it.name == "isBionicsAdvancedMaterialEnabled" &&
+                            it.parameterCount == 1 && it.parameterTypes[0] == classOf<Context>()
+                }
+                method?.invoke(null, targetContext) as? Boolean ?: false
+            }.getOrDefault(false)
+            if (bionics) {
+                // bionics 高级材质下不额外上色，走官方 blend 让文字与玻璃背景融合。
+            } else {
                 val tint = resolvePluginColor(MORE_BUTTON_COLOR_NAMES)
                     ?: Color.argb(0xCC, 0xFF, 0xFF, 0xFF)
-                button.setImageTintList(ColorStateList.valueOf(tint))
+                textView.setTextColor(tint)
+            }
+            if (textView.isAttachedToWindow) {
+                applyOfficialExpandButtonBlend(textView) { view ->
+                    val tint = resolvePluginColor(MORE_BUTTON_COLOR_NAMES)
+                        ?: Color.argb(0xCC, 0xFF, 0xFF, 0xFF)
+                    (view as? TextView)?.setTextColor(tint)
+                }
+            } else {
+                textView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(v: View) {
+                        textView.removeOnAttachStateChangeListener(this)
+                        applyOfficialExpandButtonBlend(textView) { view ->
+                            val tint = resolvePluginColor(MORE_BUTTON_COLOR_NAMES)
+                                ?: Color.argb(0xCC, 0xFF, 0xFF, 0xFF)
+                            (view as? TextView)?.setTextColor(tint)
+                        }
+                    }
+
+                    override fun onViewDetachedFromWindow(v: View) = Unit
+                })
             }
         }
 
@@ -3160,6 +3279,9 @@ class SystemUiBuiltinVolumePanel(
         private val releaseMethod: Method,
         private val updateProgressMethod: Method,
         val packageName: String,
+        // 音量百分比文字视图；由 buildAppColumn 创建后赋值。
+        // updateVolume 和 SeekBar listener 通过此引用更新文字。
+        var percentTextView: TextView? = null,
     ) {
         fun release() {
             releaseMethod.invoke(instance)
@@ -3176,6 +3298,7 @@ class SystemUiBuiltinVolumePanel(
             require(percent in 0..100) { "percent must be in 0..100" }
             slider.progress = SystemUiOfficialSliderProgress.fromPercent(percent)
             updateProgressMethod.invoke(progressView, false, slider)
+            percentTextView?.text = "$percent%"
         }
 
         fun prepareStandaloneColumn(
@@ -3380,6 +3503,7 @@ class SystemUiBuiltinVolumePanel(
                 onTrackingChanged: (Boolean) -> Unit,
                 onVolumeCommitted: (SystemUiBuiltinAppRowState, Int) -> Unit,
                 onFailure: (Throwable) -> Unit,
+                onPercentChanged: ((Int) -> Unit)? = null,
             ): OfficialVolumeColumn {
                 val columnClass = VOLUME_COLUMN_CLASS.toClass(classLoader, true)
                 val column = columnClass.getConstructor().newInstance()
@@ -3453,6 +3577,13 @@ class SystemUiBuiltinVolumePanel(
                         try {
                             // 官方实现无论来源都更新填充层；用户拖动时使用 Folme 动画，程序更新时直接落位。
                             toProgressWithAnim.invoke(progressView, fromUser, seekBar)
+                            // 百分比文字更新需覆盖程序更新和用户拖动两种场景，
+                            // 因此在 fromUser 早期返回之前执行。
+                            onPercentChanged?.invoke(
+                                SystemUiOfficialSliderProgress.toPercent(
+                                    progress
+                                )
+                            )
                             if (!fromUser) return
                             val level = SystemUiOfficialSliderProgress.toPercent(progress)
                             dragSession.move(level) { changedLevel ->
@@ -3559,6 +3690,9 @@ class SystemUiBuiltinVolumePanel(
         // 应用图标尺寸（音量条内部底部展示）。
         private const val INNER_ICON_SIZE_DP = 26
         private const val INNER_ICON_PADDING_DP = 6
+
+        // 音量百分比文字高度（固定值便于精确垂直居中）。
+        private const val PERCENT_TEXT_HEIGHT_DP = 20
 
         // 列进入/退出动画——对齐官方 FolmeEase.spring 参数。
         // EASE_EXPAND_SIZE = spring(0.82, 0.4), EASE_COLLAPSE_SIZE = spring(0.9, 0.3)

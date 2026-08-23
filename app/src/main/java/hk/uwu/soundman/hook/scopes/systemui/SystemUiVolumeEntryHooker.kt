@@ -28,6 +28,7 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
         log = ::writeLog,
         builtinPanelEnabled = ::isBuiltinPanelEnabled,
         hideSystemAppsEnabled = ::isHideSystemAppsEnabled,
+        volumePercentEnabled = ::isVolumePercentEnabled,
     )
     private val pluginClassLoaderReader = SystemUiPluginClassLoader()
     private val pluginClassLoaderAttach = SystemUiPluginClassLoaderAttach()
@@ -290,6 +291,27 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
     } catch (error: Throwable) {
         YLog.error("Unable to read hide-system-apps setting through Yuki prefs", error)
         AppSettingsDefaults.HIDE_SYSTEM_APPS_ENABLED
+    }
+
+    private fun isVolumePercentEnabled(): Boolean = try {
+        val modulePrefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        val entries = modulePrefs.all()
+        val value = entries[AppSettingsKeys.VOLUME_PERCENT]
+        val enabled = when (value) {
+            null -> AppSettingsDefaults.VOLUME_PERCENT_ENABLED
+            is Boolean -> value
+            else -> error(
+                "Invalid ${AppSettingsKeys.VOLUME_PERCENT} type=${value.javaClass.name}",
+            )
+        }
+        YLog.info(
+            "Volume-percent preference enabled=$enabled " +
+                    "available=${modulePrefs.isPreferencesAvailable} keys=${entries.keys.sorted()}",
+        )
+        enabled
+    } catch (error: Throwable) {
+        YLog.error("Unable to read volume-percent setting through Yuki prefs", error)
+        AppSettingsDefaults.VOLUME_PERCENT_ENABLED
     }
 
     private fun writeLog(priority: Int, tag: String, message: String, throwable: Throwable?) {

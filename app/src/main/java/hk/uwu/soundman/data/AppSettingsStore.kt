@@ -98,6 +98,18 @@ object SystemUiAppSettingsSync {
         )
     }
 
+    /** 将"音量百分比"设置同步到跨进程偏好，供 SystemUI 内置面板读取。 */
+    fun persistVolumePercentEnabled(context: Context, enabled: Boolean) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putBoolean(AppSettingsKeys.VOLUME_PERCENT, enabled)
+        }
+        AppLog.info(
+            "Persisted volume-percent setting enabled=$enabled " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
+
     /** 将"闹钟优先"设置同步到跨进程偏好，供被注入进程读取。 */
     fun persistAlarmFirstEnabled(context: Context, enabled: Boolean) {
         val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
@@ -119,6 +131,7 @@ class SharedPreferencesAppSettingsStore(
     private val systemUiBuiltinPanelMirror: ((Boolean) -> Unit)? = null,
     private val hideSystemAppsMirror: ((Boolean) -> Unit)? = null,
     private val alarmFirstMirror: ((Boolean) -> Unit)? = null,
+    private val volumePercentMirror: ((Boolean) -> Unit)? = null,
 ) : AppSettingsStore {
     override fun read(): AppSettings = logged("read app settings") {
         AppSettings(
@@ -148,8 +161,22 @@ class SharedPreferencesAppSettingsStore(
     override fun setSmoothCornersEnabled(enabled: Boolean): AppSettings =
         write(AppSettingsKeys.SMOOTH_CORNERS, enabled)
 
-    override fun setVolumePercentEnabled(enabled: Boolean): AppSettings =
-        write(AppSettingsKeys.VOLUME_PERCENT, enabled)
+    override fun setVolumePercentEnabled(enabled: Boolean): AppSettings {
+        val previous = read().volumePercentEnabled
+        val updated = write(AppSettingsKeys.VOLUME_PERCENT, enabled)
+        try {
+            volumePercentMirror?.invoke(enabled)
+        } catch (error: RuntimeException) {
+            try {
+                write(AppSettingsKeys.VOLUME_PERCENT, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror volume-percent setting", error)
+            throw error
+        }
+        return updated
+    }
 
     override fun setSystemUiBuiltinVolumePanelEnabled(enabled: Boolean): AppSettings {
         val previous = read().systemUiBuiltinVolumePanelEnabled
