@@ -12,6 +12,8 @@
     <string name="settings_smooth_corners_summary">為主要玻璃卡片和面板使用 MIUIX 超橢圓圓角</string>
     <string name="settings_volume_percent">顯示音量百分比</string>
     <string name="settings_volume_percent_summary">在每個應用程式音量列上方顯示目前百分比</string>
+    <string name="settings_systemui_builtin_volume_panel">實驗性系統介面內建面板</string>
+    <string name="settings_systemui_builtin_volume_panel_summary">在目前系統音量對話方塊內顯示應用程式音量控制；失敗時自動回退到懸浮面板</string>
     <string name="settings_hide_system_apps">隱藏系統應用程式</string>
     <string name="settings_hide_system_apps_summary">在音量面板中不顯示系統應用程式</string>
     <string name="settings_alarm_first">鬧鐘優先</string>
@@ -19,6 +21,44 @@
     <string name="home_xposed_active">模組已啟用</string>
     <string name="home_xposed_inactive">模組未啟用</string>
     <string name="home_xposed_inactive_hint">請在 Xposed 管理器中啟用模組，並勾選系統框架、系統介面以及其他需要生效的應用程式</string>
+    <string name="home_status_working">運作中</string>
+    <string name="home_status_inactive">未啟用</string>
+    <string name="home_working_version">版本：%1$s</string>
+    <string name="status_card">狀態</string>
+    <string name="module_is_activated">模組已啟用</string>
+    <string name="module_not_activated">模組未啟用</string>
+    <string name="home_module_version_summary">組建 %1$s · %2$s</string>
+    <string name="home_open_overlay_summary">開啟懸浮音量和輸出裝置面板</string>
+    <string name="home_root_warning_title">Root 無法使用</string>
+    <string name="home_root_warning_desc">部分功能需要 Root 權限，請在 Root 管理器中授予本應用程式 Root 權限</string>
+    <string name="home_update_title">版本更新</string>
+    <string name="home_update_current">當前提交</string>
+    <string name="home_update_latest">最新提交</string>
+    <string name="home_update_checking">檢查中…</string>
+    <string name="home_update_unknown">未知</string>
+    <string name="home_update_warning_title">發現版本更新</string>
+    <string name="home_update_warning_desc">當前 %1$s，最新 %2$s</string>
+
+    <string name="nav_home">首頁</string>
+    <string name="nav_settings">設定</string>
+    <string name="nav_about">關於</string>
+
+    <string name="about_device_name">裝置</string>
+    <string name="about_android_version">Android 版本</string>
+    <string name="about_system_version">系統版本</string>
+    <string name="about_author">開發者</string>
+
+    <string name="credits_github_title">GitHub 倉庫</string>
+    <string name="credits_github_desc">查看原始碼、問題反饋與發布版本</string>
+    <string name="credits_contributors_title">鳴謝人員</string>
+    <string name="credits_contributors_desc">查看參與專案開發、測試與支援的人員名單</string>
+    <string name="credits_contributors_loading">正在載入鳴謝人員名單…</string>
+    <string name="credits_contributors_load_failed">獲取鳴謝人員名單失敗，請稍後重試</string>
+    <string name="credits_contributors_retry">重試</string>
+    <string name="credits_contributors_empty">暫無鳴謝人員資訊</string>
+    <string name="licenses_name">開源授權</string>
+    <string name="licenses_name_summary">查看我們引用了哪些程式庫</string>
+    <string name="licenses_placeholder">授權資訊將在此顯示</string>
     <string name="overlay_channel_name">SoundMan 懸浮面板</string>
     <string name="overlay_channel_description">保持應用音量與輸出裝置面板可見</string>
     <string name="overlay_notification_title">SoundMan 面板正在顯示</string>
@@ -59,4 +99,10 @@
     <string name="rule_corrupted_message">無法讀取已儲存規則。請檢查紀錄並重新儲存此應用的規則。</string>
 
     <string name="runtime_system_audio_provider">系統音訊功能由 Xposed system_server 模組提供</string>
+
+    <string name="home_more">更多</string>
+    <string name="home_more_kill_systemui">重啟系統介面</string>
+    <string name="home_more_kill_systemui_summary">強制停止並重啟系統介面</string>
+    <string name="home_more_kill_systemui_success">系統介面正在重啟…</string>
+    <string name="home_more_kill_systemui_failed">重啟系統介面失敗</string>
 </resources>

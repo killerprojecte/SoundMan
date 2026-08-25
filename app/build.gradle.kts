@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.aboutlibraries)
 }
 
 val gitVersionCode = gradle.extra["gitVersionCode"] as Int
@@ -33,6 +35,7 @@ android {
         versionName = gropify.project.app.versionName
         versionCode = gitVersionCode
         buildConfigField("String", "BUILD_CHANNEL", "\"$buildSuffix\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -147,7 +150,22 @@ tasks.matching { it.name.startsWith("ksp") }.configureEach {
     dependsOn(ensureGropifyAppProperties)
 }
 
+aboutLibraries {
+    offlineMode = false
+    collect {
+        fetchRemoteLicense.set(false)
+    }
+    export {
+        prettyPrint.set(true)
+    }
+    library {
+        duplicationMode.set(com.mikepenz.aboutlibraries.plugin.DuplicateMode.MERGE)
+        duplicationRule.set(com.mikepenz.aboutlibraries.plugin.DuplicateRule.GROUP)
+    }
+}
+
 dependencies {
+    implementation(libs.capsule)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
@@ -157,9 +175,17 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.icons)
     implementation(libs.miuix.squircle)
+    implementation(libs.miuix.blur)
+    implementation(libs.materialKolor.utilities)
+    implementation(libs.navigationevent.compose)
+    implementation(libs.backdrop)
+    implementation(libs.gson)
+    implementation(libs.kotlinx.serialization.json)
+
     implementation(libs.yukihookapi.api)
     compileOnly(libs.xposed.api)
     ksp(libs.yukihookapi.ksp.xposed)
@@ -168,5 +194,8 @@ dependencies {
     implementation(libs.kavaref.core)
     implementation(libs.kavaref.extension)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

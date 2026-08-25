@@ -3,7 +3,6 @@ package hk.uwu.soundman.hook
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.annotation.xposed.InjectYukiHookWithXposed
 import com.highcapable.yukihookapi.hook.factory.configs
-import com.highcapable.yukihookapi.hook.factory.encase
 import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
 import hk.uwu.soundman.BuildConfig
 import hk.uwu.soundman.hook.scopes.system.PreferredDeviceHooker
@@ -16,8 +15,11 @@ import hk.uwu.soundman.hook.scopes.systemui.SystemUiVolumeEntryHooker
  * 动机：用 [YukiHookAPI.encase] 分别装载 Zygote / system_server / SystemUI，
  * 不再经过自研 libxposed 102 运行时。
  */
-@InjectYukiHookWithXposed
-object HookEntry : IYukiHookXposedInit {
+@InjectYukiHookWithXposed(
+    entryClassName = "HookEntrance",
+    isUsingXposedModuleStatus = true,
+)
+class HookEntry : IYukiHookXposedInit {
     override fun onInit() = configs {
         debugLog { tag = "SoundMan" }
         isDebug = BuildConfig.DEBUG

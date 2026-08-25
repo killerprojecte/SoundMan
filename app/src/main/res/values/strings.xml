@@ -23,6 +23,45 @@
     <string name="home_xposed_active">Module activated</string>
     <string name="home_xposed_inactive">Module not activated</string>
     <string name="home_xposed_inactive_hint">Enable this module in the Xposed manager, then select System Framework, System UI, and any other apps that should be affected</string>
+    <string name="home_status_working">Working</string>
+    <string name="home_status_inactive">Inactive</string>
+    <string name="home_working_version">Version: %1$s</string>
+    <string name="status_card">Status</string>
+    <string name="module_is_activated">Module activated</string>
+    <string name="module_not_activated">Module not activated</string>
+    <string name="home_module_version_summary">Build %1$s · %2$s</string>
+    <string name="home_open_overlay_summary">Open the floating volume and output device panel</string>
+    <string name="home_root_warning_title">Root unavailable</string>
+    <string name="home_root_warning_desc">Some features require root privileges. Please grant this application root privileges using your root manager</string>
+    <string name="home_update_title">Version Update</string>
+    <string name="home_update_current">Current commit</string>
+    <string name="home_update_latest">Latest commit</string>
+    <string name="home_update_checking">Checking…</string>
+    <string name="home_update_unknown">Unknown</string>
+    <string name="home_update_warning_title">Update available</string>
+    <string name="home_update_warning_desc">Current %1$s, latest %2$s</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_about">About</string>
+
+    <string name="about_github" translatable="false">GitHub</string>
+    <string name="about_device_name">Device</string>
+    <string name="about_android_version">Android version</string>
+    <string name="about_system_version">System version</string>
+    <string name="about_author">Developer</string>
+
+    <string name="credits_github_title">GitHub Repository</string>
+    <string name="credits_github_desc">Source code, issues and releases</string>
+    <string name="credits_contributors_title">Contributors</string>
+    <string name="credits_contributors_desc">View the people who helped develop, test, and support this project</string>
+    <string name="credits_contributors_loading">Loading contributors…</string>
+    <string name="credits_contributors_load_failed">Failed to load contributors. Please try again later</string>
+    <string name="credits_contributors_retry">Retry</string>
+    <string name="credits_contributors_empty">No contributor information available</string>
+    <string name="licenses_name">Open Source Licenses</string>
+    <string name="licenses_name_summary">See which libraries we have referenced</string>
+    <string name="licenses_placeholder">License information will be displayed here</string>
     <string name="overlay_channel_name">SoundMan overlay</string>
     <string name="overlay_channel_description">Keep the app volume and output device panel visible</string>
     <string name="overlay_notification_title">SoundMan panel is showing</string>
@@ -67,4 +106,10 @@
     <string name="rule_corrupted_message">Saved rules could not be read. Check the logs and save this app\'s rules again.</string>
 
     <string name="runtime_system_audio_provider">System audio features are provided by the Xposed system_server module</string>
+
+    <string name="home_more">More</string>
+    <string name="home_more_kill_systemui">Restart System UI</string>
+    <string name="home_more_kill_systemui_summary">Force stop and restart the system interface</string>
+    <string name="home_more_kill_systemui_success">System UI is restarting…</string>
+    <string name="home_more_kill_systemui_failed">Failed to restart System UI</string>
 </resources>

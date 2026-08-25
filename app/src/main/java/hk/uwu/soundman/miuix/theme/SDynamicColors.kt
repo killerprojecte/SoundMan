@@ -1,0 +1,642 @@
+// Copyright 2025, compose-miuix-ui contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package hk.uwu.soundman.miuix.theme
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Color.parseColor
+import android.os.Build
+import android.provider.Settings
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import com.materialkolor.dynamiccolor.ColorSpec
+import com.materialkolor.hct.Hct
+import com.materialkolor.scheme.DynamicScheme
+import com.materialkolor.scheme.SchemeContent
+import com.materialkolor.scheme.SchemeExpressive
+import com.materialkolor.scheme.SchemeFidelity
+import com.materialkolor.scheme.SchemeFruitSalad
+import com.materialkolor.scheme.SchemeMonochrome
+import com.materialkolor.scheme.SchemeNeutral
+import com.materialkolor.scheme.SchemeRainbow
+import com.materialkolor.scheme.SchemeTonalSpot
+import com.materialkolor.scheme.SchemeVibrant
+import org.json.JSONObject
+import top.yukonga.miuix.kmp.theme.Colors
+import top.yukonga.miuix.kmp.theme.ThemeColorSpec
+import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
+
+// ---------------------------------------------------------------------------
+// MonetRoles — copied from miuix MonetMapping.kt (internal in original, not
+// accessible from an external package as a Maven dependency).
+// ---------------------------------------------------------------------------
+
+private data class MonetRoles(
+    val primary: Color,
+    val onPrimary: Color,
+    val primaryFixed: Color,
+    val onPrimaryFixed: Color,
+    val error: Color,
+    val onError: Color,
+    val errorContainer: Color,
+    val onErrorContainer: Color,
+    val primaryContainer: Color,
+    val onPrimaryContainer: Color,
+    val secondary: Color,
+    val onSecondary: Color,
+    val secondaryContainer: Color,
+    val onSecondaryContainer: Color,
+    val tertiaryContainer: Color,
+    val onTertiaryContainer: Color,
+    val background: Color,
+    val onBackground: Color,
+    val surface: Color,
+    val onSurface: Color,
+    val surfaceVariant: Color,
+    val surfaceContainer: Color,
+    val surfaceContainerHigh: Color,
+    val surfaceContainerHighest: Color,
+    val outline: Color,
+    val outlineVariant: Color,
+    val onSurfaceVariant: Color,
+)
+
+// ---------------------------------------------------------------------------
+// Color compositing helpers — copied from miuix MonetMapping.kt (private).
+// ---------------------------------------------------------------------------
+
+private fun compositeOver(fg: Color, bg: Color): Color {
+    val fa = fg.alpha
+    val ba = bg.alpha
+    val outA = fa + ba * (1f - fa)
+    if (outA == 0f) return Color(0f, 0f, 0f, 0f)
+    val r = (fg.red * fa + bg.red * ba * (1f - fa)) / outA
+    val g = (fg.green * fa + bg.green * ba * (1f - fa)) / outA
+    val b = (fg.blue * fa + bg.blue * ba * (1f - fa)) / outA
+    return Color(r, g, b, outA)
+}
+
+private fun opaqueOver(fg: Color, bg: Color): Color {
+    val c = compositeOver(fg, bg)
+    return Color(c.red, c.green, c.blue, 1f)
+}
+
+private fun ensureOpaqueOver(fg: Color, bg: Color): Color =
+    if (fg.alpha >= 1f) fg else opaqueOver(fg, bg)
+
+// ---------------------------------------------------------------------------
+// mapMd3RolesToMiuixColorsCommon — copied from miuix MonetMapping.kt
+// (internal in original, not accessible externally).
+// ---------------------------------------------------------------------------
+
+private fun mapMd3RolesToMiuixColorsCommon(roles: MonetRoles, dark: Boolean): Colors {
+    val baseSurface = roles.surface
+    val baseSurfaceContainerHigh = roles.surfaceContainerHigh
+    val onSurfaceSecondaryOpaque = ensureOpaqueOver(roles.onSurface.copy(alpha = 0.8f), baseSurface)
+    val onSurfaceContainerHighOpaque =
+        ensureOpaqueOver(roles.onSurface.copy(alpha = 0.8f), baseSurfaceContainerHigh)
+    val sliderBackground = ensureOpaqueOver(roles.primary.copy(alpha = 0.2f), baseSurface)
+    val disabledPrimaryOpaque = ensureOpaqueOver(roles.primary.copy(alpha = 0.38f), baseSurface)
+    val disabledOnPrimaryOpaque =
+        ensureOpaqueOver(roles.onPrimary.copy(alpha = 0.38f), disabledPrimaryOpaque)
+    val disabledPrimaryButtonOpaque =
+        ensureOpaqueOver(roles.primary.copy(alpha = 0.38f), baseSurface)
+    val disabledOnPrimaryButtonOpaque =
+        ensureOpaqueOver(roles.onPrimary.copy(alpha = 0.6f), disabledPrimaryButtonOpaque)
+    val disabledPrimarySliderOpaque =
+        ensureOpaqueOver(roles.primary.copy(alpha = 0.38f), baseSurface)
+    val disabledSecondaryOpaque =
+        ensureOpaqueOver(roles.outlineVariant.copy(alpha = 0.5f), baseSurface)
+    val disabledOnSecondaryOpaque =
+        ensureOpaqueOver(roles.onSurface.copy(alpha = 0.38f), disabledSecondaryOpaque)
+    val disabledSecondaryVariantOpaque =
+        ensureOpaqueOver(roles.surfaceContainerHigh.copy(alpha = 0.6f), baseSurface)
+    val disabledOnSecondaryVariantOpaque =
+        ensureOpaqueOver(roles.onSurface.copy(alpha = 0.38f), disabledSecondaryVariantOpaque)
+
+    return Colors(
+        primary = roles.primary,
+        onPrimary = roles.onPrimary,
+        primaryVariant = roles.primaryFixed,
+        onPrimaryVariant = roles.onPrimaryFixed,
+        error = roles.error,
+        onError = roles.onError,
+        errorContainer = roles.errorContainer,
+        onErrorContainer = roles.onErrorContainer,
+        disabledPrimary = disabledPrimaryOpaque,
+        disabledOnPrimary = disabledOnPrimaryOpaque,
+        disabledPrimaryButton = disabledPrimaryButtonOpaque,
+        disabledOnPrimaryButton = disabledOnPrimaryButtonOpaque,
+        disabledPrimarySlider = disabledPrimarySliderOpaque,
+        primaryContainer = roles.primaryContainer,
+        onPrimaryContainer = roles.onPrimaryContainer,
+        secondary = roles.outlineVariant,
+        onSecondary = roles.outline,
+        secondaryVariant = roles.surfaceContainerHigh,
+        onSecondaryVariant = roles.onSurface,
+        disabledSecondary = disabledSecondaryOpaque,
+        disabledOnSecondary = disabledOnSecondaryOpaque,
+        disabledSecondaryVariant = disabledSecondaryVariantOpaque,
+        disabledOnSecondaryVariant = disabledOnSecondaryVariantOpaque,
+        secondaryContainer = roles.secondaryContainer,
+        onSecondaryContainer = roles.onSecondaryContainer,
+        secondaryContainerVariant = roles.surfaceContainerHighest,
+        onSecondaryContainerVariant = roles.onSurfaceVariant,
+        tertiaryContainer = roles.tertiaryContainer,
+        onTertiaryContainer = roles.onTertiaryContainer,
+        tertiaryContainerVariant = roles.onTertiaryContainer,
+        background = roles.background,
+        onBackground = roles.onBackground,
+        onBackgroundVariant = roles.primary,
+        surface = roles.surface,
+        onSurface = roles.onSurface,
+        surfaceVariant = roles.surfaceVariant,
+        onSurfaceSecondary = onSurfaceSecondaryOpaque,
+        onSurfaceVariantSummary = roles.onSurfaceVariant,
+        onSurfaceVariantActions = roles.onSurfaceVariant,
+        disabledOnSurface = roles.onSurface,
+        surfaceContainer = roles.surfaceContainer,
+        onSurfaceContainer = roles.onSurface,
+        onSurfaceContainerVariant = roles.onSurfaceVariant,
+        surfaceContainerHigh = roles.surfaceContainerHigh,
+        onSurfaceContainerHigh = onSurfaceContainerHighOpaque,
+        surfaceContainerHighest = roles.surfaceContainerHighest,
+        onSurfaceContainerHighest = roles.onSurface,
+        outline = roles.outline,
+        dividerLine = roles.outlineVariant,
+        windowDimming = if (dark) Color.Black.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.3f),
+        sliderKeyPoint = roles.primary,
+        sliderKeyPointForeground = roles.surfaceContainerHigh,
+        sliderBackground = sliderBackground,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// colorsFromSeed — copied from miuix ThemeController.kt
+// (internal in original, not accessible externally).
+// ---------------------------------------------------------------------------
+
+private fun colorsFromSeed(
+    seed: Color,
+    colorSpec: ThemeColorSpec,
+    paletteStyle: ThemePaletteStyle,
+    dark: Boolean,
+): Colors {
+    val isSpec2025Supported = when (paletteStyle) {
+        ThemePaletteStyle.TonalSpot,
+        ThemePaletteStyle.Neutral,
+        ThemePaletteStyle.Vibrant,
+        ThemePaletteStyle.Expressive,
+            -> true
+
+        else -> false
+    }
+
+    val internalSpec = if (colorSpec == ThemeColorSpec.Spec2025 && isSpec2025Supported) {
+        ColorSpec.SpecVersion.SPEC_2025
+    } else {
+        ColorSpec.SpecVersion.SPEC_2021
+    }
+
+    val hctColor = Hct.fromInt(seed.toArgb())
+    val scheme: DynamicScheme = when (paletteStyle) {
+        ThemePaletteStyle.TonalSpot -> SchemeTonalSpot(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Neutral -> SchemeNeutral(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Vibrant -> SchemeVibrant(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Expressive -> SchemeExpressive(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Rainbow -> SchemeRainbow(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.FruitSalad -> SchemeFruitSalad(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Monochrome -> SchemeMonochrome(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Fidelity -> SchemeFidelity(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+
+        ThemePaletteStyle.Content -> SchemeContent(
+            sourceColorHct = hctColor,
+            isDark = dark,
+            contrastLevel = 0.0,
+            specVersion = internalSpec,
+            platform = DynamicScheme.Platform.PHONE,
+        )
+    }
+    val roles = MonetRoles(
+        primary = Color(scheme.primary),
+        onPrimary = Color(scheme.onPrimary),
+        primaryFixed = Color(scheme.primaryFixed),
+        onPrimaryFixed = Color(scheme.onPrimaryFixed),
+        error = Color(scheme.error),
+        onError = Color(scheme.onError),
+        errorContainer = Color(scheme.errorContainer),
+        onErrorContainer = Color(scheme.onErrorContainer),
+        primaryContainer = Color(scheme.primaryContainer),
+        onPrimaryContainer = Color(scheme.onPrimaryContainer),
+        secondary = Color(scheme.secondary),
+        onSecondary = Color(scheme.onSecondary),
+        secondaryContainer = Color(scheme.secondaryContainer),
+        onSecondaryContainer = Color(scheme.onSecondaryContainer),
+        tertiaryContainer = Color(scheme.tertiaryContainer),
+        onTertiaryContainer = Color(scheme.onTertiaryContainer),
+        background = Color(scheme.background),
+        onBackground = Color(scheme.onBackground),
+        surface = Color(scheme.surface),
+        onSurface = Color(scheme.onSurface),
+        surfaceVariant = Color(scheme.surfaceVariant),
+        surfaceContainer = Color(scheme.surfaceContainer),
+        surfaceContainerHigh = Color(scheme.surfaceContainerHigh),
+        surfaceContainerHighest = Color(scheme.surfaceContainerHighest),
+        outline = Color(scheme.outline),
+        outlineVariant = Color(scheme.outlineVariant),
+        onSurfaceVariant = Color(scheme.onSurfaceVariant),
+    )
+    return mapMd3RolesToMiuixColorsCommon(roles, dark)
+}
+
+private fun monetSystemColors(dark: Boolean): Colors = colorsFromSeed(
+    seed = Color(0xFF6750A4),
+    colorSpec = ThemeColorSpec.Spec2021,
+    paletteStyle = ThemePaletteStyle.TonalSpot,
+    dark = dark,
+)
+
+// ---------------------------------------------------------------------------
+// Platform dynamic colors — the actual S implementation.
+// ---------------------------------------------------------------------------
+
+private data class SystemPaletteInfo(
+    val seedColor: Color,
+    val paletteStyle: ThemePaletteStyle,
+    val colorSpec: ThemeColorSpec,
+)
+
+@Composable
+fun sPlatformDynamicColors(dark: Boolean): Colors {
+    val context = LocalContext.current
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val paletteInfo = readSystemPaletteInfo(context)
+        Log.d("SDynamicColors", "System palette info: $paletteInfo")
+        if (paletteInfo != null) {
+            return colorsFromSeed(
+                seed = paletteInfo.seedColor,
+                colorSpec = paletteInfo.colorSpec,
+                paletteStyle = paletteInfo.paletteStyle,
+                dark = dark,
+            )
+        }
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val roles = systemMd3Roles(context, dark)
+        return mapMd3RolesToMiuixColorsCommon(roles, dark)
+    }
+    return monetSystemColors(dark)
+}
+
+@SuppressLint("InlinedApi", "UseKtx")
+private fun readSystemPaletteInfo(context: Context): SystemPaletteInfo? {
+    return try {
+        val json = Settings.Secure.getString(
+            context.contentResolver,
+            "theme_customization_overlay_packages",
+        ) ?: return null
+
+        val jsonObject = JSONObject(json)
+
+        val seedColor: Color
+        val seedHex = jsonObject.optString("android.theme.customization.system_palette", "")
+        if (seedHex.isNotBlank()) {
+            val seedArgb = parseColor(if (seedHex.startsWith("#")) seedHex else "#$seedHex")
+            seedColor = Color(seedArgb)
+        } else {
+            seedColor = systemColor(context, android.R.color.system_accent1_500)
+        }
+
+        val styleName =
+            jsonObject.optString("android.theme.customization.theme_style", "TONAL_SPOT")
+        val paletteStyle = mapAndroidStyleToThemePaletteStyle(styleName)
+
+        val colorSpec = if (Build.VERSION.SDK_INT >= 36) {
+            ThemeColorSpec.Spec2025
+        } else {
+            ThemeColorSpec.Spec2021
+        }
+
+        SystemPaletteInfo(seedColor, paletteStyle, colorSpec)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun mapAndroidStyleToThemePaletteStyle(styleName: String): ThemePaletteStyle =
+    when (styleName.uppercase()) {
+        "TONAL_SPOT" -> ThemePaletteStyle.TonalSpot
+        "VIBRANT" -> ThemePaletteStyle.Vibrant
+        "EXPRESSIVE" -> ThemePaletteStyle.Expressive
+        "SPRITZ" -> ThemePaletteStyle.Neutral
+        "RAINBOW" -> ThemePaletteStyle.Rainbow
+        "FRUIT_SALAD" -> ThemePaletteStyle.FruitSalad
+        "MONOCHROMATIC" -> ThemePaletteStyle.Monochrome
+        "MONOCHROME" -> ThemePaletteStyle.Monochrome
+        "FIDELITY" -> ThemePaletteStyle.Fidelity
+        "CONTENT" -> ThemePaletteStyle.Content
+        "NEUTRAL" -> ThemePaletteStyle.Neutral
+        else -> ThemePaletteStyle.TonalSpot
+    }
+
+@SuppressLint("NewApi")
+private fun systemColor(context: Context, resId: Int): Color =
+    Color(context.resources.getColor(resId, context.theme))
+
+private fun toneFrom(base: Color, tone: Double): Color {
+    val hct = Hct.fromInt(base.toArgb())
+    val adjusted = Hct.from(hct.hue, hct.chroma, tone)
+    return Color(adjusted.toInt())
+}
+
+@SuppressLint("InlinedApi")
+private fun systemMd3Roles(context: Context, dark: Boolean): MonetRoles {
+    fun resAccent1(index: Int): Int = when (index) {
+        0 -> android.R.color.system_accent1_0
+        10 -> android.R.color.system_accent1_10
+        50 -> android.R.color.system_accent1_50
+        100 -> android.R.color.system_accent1_100
+        200 -> android.R.color.system_accent1_200
+        300 -> android.R.color.system_accent1_300
+        400 -> android.R.color.system_accent1_400
+        500 -> android.R.color.system_accent1_500
+        600 -> android.R.color.system_accent1_600
+        700 -> android.R.color.system_accent1_700
+        800 -> android.R.color.system_accent1_800
+        900 -> android.R.color.system_accent1_900
+        1000 -> android.R.color.system_accent1_1000
+        else -> android.R.color.system_accent1_500
+    }
+
+    fun resAccent2(index: Int): Int = when (index) {
+        0 -> android.R.color.system_accent2_0
+        10 -> android.R.color.system_accent2_10
+        50 -> android.R.color.system_accent2_50
+        100 -> android.R.color.system_accent2_100
+        200 -> android.R.color.system_accent2_200
+        300 -> android.R.color.system_accent2_300
+        400 -> android.R.color.system_accent2_400
+        500 -> android.R.color.system_accent2_500
+        600 -> android.R.color.system_accent2_600
+        700 -> android.R.color.system_accent2_700
+        800 -> android.R.color.system_accent2_800
+        900 -> android.R.color.system_accent2_900
+        1000 -> android.R.color.system_accent2_1000
+        else -> android.R.color.system_accent2_500
+    }
+
+    fun resAccent3(index: Int): Int = when (index) {
+        0 -> android.R.color.system_accent3_0
+        10 -> android.R.color.system_accent3_10
+        50 -> android.R.color.system_accent3_50
+        100 -> android.R.color.system_accent3_100
+        200 -> android.R.color.system_accent3_200
+        300 -> android.R.color.system_accent3_300
+        400 -> android.R.color.system_accent3_400
+        500 -> android.R.color.system_accent3_500
+        600 -> android.R.color.system_accent3_600
+        700 -> android.R.color.system_accent3_700
+        800 -> android.R.color.system_accent3_800
+        900 -> android.R.color.system_accent3_900
+        1000 -> android.R.color.system_accent3_1000
+        else -> android.R.color.system_accent3_500
+    }
+
+    fun resNeutral1(index: Int): Int = when (index) {
+        0 -> android.R.color.system_neutral1_0
+        10 -> android.R.color.system_neutral1_10
+        50 -> android.R.color.system_neutral1_50
+        100 -> android.R.color.system_neutral1_100
+        200 -> android.R.color.system_neutral1_200
+        300 -> android.R.color.system_neutral1_300
+        400 -> android.R.color.system_neutral1_400
+        500 -> android.R.color.system_neutral1_500
+        600 -> android.R.color.system_neutral1_600
+        700 -> android.R.color.system_neutral1_700
+        800 -> android.R.color.system_neutral1_800
+        900 -> android.R.color.system_neutral1_900
+        1000 -> android.R.color.system_neutral1_1000
+        else -> android.R.color.system_neutral1_500
+    }
+
+    fun resNeutral2(index: Int): Int = when (index) {
+        0 -> android.R.color.system_neutral2_0
+        10 -> android.R.color.system_neutral2_10
+        50 -> android.R.color.system_neutral2_50
+        100 -> android.R.color.system_neutral2_100
+        200 -> android.R.color.system_neutral2_200
+        300 -> android.R.color.system_neutral2_300
+        400 -> android.R.color.system_neutral2_400
+        500 -> android.R.color.system_neutral2_500
+        600 -> android.R.color.system_neutral2_600
+        700 -> android.R.color.system_neutral2_700
+        800 -> android.R.color.system_neutral2_800
+        900 -> android.R.color.system_neutral2_900
+        1000 -> android.R.color.system_neutral2_1000
+        else -> android.R.color.system_neutral2_500
+    }
+
+    val a1 = { idx: Int -> systemColor(context, resAccent1(idx)) }
+    val a2 = { idx: Int -> systemColor(context, resAccent2(idx)) }
+    val a3 = { idx: Int -> systemColor(context, resAccent3(idx)) }
+    val n1 = { idx: Int -> systemColor(context, resNeutral1(idx)) }
+    val n2 = { idx: Int -> systemColor(context, resNeutral2(idx)) }
+
+    val isAtLeast34 = Build.VERSION.SDK_INT >= 34
+
+    return if (!dark) {
+        if (isAtLeast34) {
+            MonetRoles(
+                primary = a1(600),
+                onPrimary = a1(0),
+                primaryFixed = a1(200),
+                onPrimaryFixed = a1(0),
+                error = Color(0xFFB3261E),
+                onError = Color(0xFFFFFFFF),
+                errorContainer = Color(0xFFF9DEDC),
+                onErrorContainer = Color(0xFF410E0B),
+                primaryContainer = a1(100),
+                onPrimaryContainer = a1(900),
+                secondary = a2(600),
+                onSecondary = a2(0),
+                secondaryContainer = a2(100),
+                onSecondaryContainer = a2(900),
+                tertiaryContainer = a3(100),
+                onTertiaryContainer = a3(900),
+                background = toneFrom(n1(100), 98.0),
+                onBackground = toneFrom(n1(100), 10.0),
+                surface = toneFrom(n1(100), 98.0),
+                onSurface = toneFrom(n1(100), 10.0),
+                surfaceVariant = toneFrom(n2(200), 90.0),
+                surfaceContainer = toneFrom(n1(100), 94.0),
+                surfaceContainerHigh = toneFrom(n1(100), 92.0),
+                surfaceContainerHighest = toneFrom(n1(100), 90.0),
+                outline = toneFrom(n2(200), 50.0),
+                outlineVariant = toneFrom(n2(200), 80.0),
+                onSurfaceVariant = toneFrom(n2(200), 30.0),
+            )
+        } else {
+            val neutralVariantBase = n2(600)
+            val background = toneFrom(neutralVariantBase, 98.0)
+            val surfaceContainer = toneFrom(neutralVariantBase, 94.0)
+            val surfaceContainerHigh = toneFrom(neutralVariantBase, 92.0)
+            val onBackground = n2(900)
+            MonetRoles(
+                primary = a1(600),
+                onPrimary = a1(0),
+                primaryFixed = a1(200),
+                onPrimaryFixed = a1(0),
+                error = Color(0xFFB3261E),
+                onError = Color(0xFFFFFFFF),
+                errorContainer = Color(0xFFF9DEDC),
+                onErrorContainer = Color(0xFF410E0B),
+                primaryContainer = a1(100),
+                onPrimaryContainer = a1(900),
+                secondary = a2(600),
+                onSecondary = a2(0),
+                secondaryContainer = a2(100),
+                onSecondaryContainer = a2(900),
+                tertiaryContainer = a3(100),
+                onTertiaryContainer = a3(900),
+                background = background,
+                onBackground = onBackground,
+                surface = background,
+                onSurface = onBackground,
+                surfaceVariant = n2(100),
+                surfaceContainer = surfaceContainer,
+                surfaceContainerHigh = surfaceContainerHigh,
+                surfaceContainerHighest = n2(100),
+                outline = n2(500),
+                outlineVariant = n2(200),
+                onSurfaceVariant = n2(700),
+            )
+        }
+    } else {
+        if (isAtLeast34) {
+            MonetRoles(
+                primary = a1(200),
+                onPrimary = a1(800),
+                primaryFixed = a1(200),
+                onPrimaryFixed = a1(800),
+                error = Color(0xFFB3261E),
+                onError = Color(0xFFFFFFFF),
+                errorContainer = Color(0xFF8C1D18),
+                onErrorContainer = Color(0xFFF9DEDC),
+                primaryContainer = a1(700),
+                onPrimaryContainer = a1(100),
+                secondary = a2(200),
+                onSecondary = a2(800),
+                secondaryContainer = a2(700),
+                onSecondaryContainer = a2(100),
+                tertiaryContainer = a3(700),
+                onTertiaryContainer = a3(100),
+                background = toneFrom(n1(10), 6.0),
+                onBackground = toneFrom(n1(10), 90.0),
+                surface = toneFrom(n1(10), 6.0),
+                onSurface = toneFrom(n1(10), 90.0),
+                surfaceVariant = toneFrom(n2(700), 30.0),
+                surfaceContainer = toneFrom(n1(10), 12.0),
+                surfaceContainerHigh = toneFrom(n1(10), 17.0),
+                surfaceContainerHighest = toneFrom(n1(10), 22.0),
+                outline = toneFrom(n2(700), 60.0),
+                outlineVariant = toneFrom(n2(700), 30.0),
+                onSurfaceVariant = toneFrom(n2(700), 80.0),
+            )
+        } else {
+            val neutralVariantBase = n2(600)
+            val background = toneFrom(neutralVariantBase, 6.0)
+            val surfaceContainer = toneFrom(neutralVariantBase, 12.0)
+            val surfaceContainerHigh = toneFrom(neutralVariantBase, 17.0)
+            val surfaceContainerHighest = toneFrom(neutralVariantBase, 22.0)
+            val onBackground = n2(100)
+            MonetRoles(
+                primary = a1(200),
+                onPrimary = a1(800),
+                primaryFixed = a1(200),
+                onPrimaryFixed = a1(800),
+                error = Color(0xFFB3261E),
+                onError = Color(0xFFFFFFFF),
+                errorContainer = Color(0xFF8C1D18),
+                onErrorContainer = Color(0xFFF9DEDC),
+                primaryContainer = a1(700),
+                onPrimaryContainer = a1(100),
+                secondary = a2(200),
+                onSecondary = a2(800),
+                secondaryContainer = a2(700),
+                onSecondaryContainer = a2(100),
+                tertiaryContainer = a3(700),
+                onTertiaryContainer = a3(100),
+                background = background,
+                onBackground = onBackground,
+                surface = background,
+                onSurface = onBackground,
+                surfaceVariant = n2(700),
+                surfaceContainer = surfaceContainer,
+                surfaceContainerHigh = surfaceContainerHigh,
+                surfaceContainerHighest = surfaceContainerHighest,
+                outline = n2(400),
+                outlineVariant = n2(700),
+                onSurfaceVariant = n2(200),
+            )
+        }
+    }
+}

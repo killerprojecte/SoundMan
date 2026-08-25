@@ -7,9 +7,12 @@ activityCompose = "1.13.0"
 composeBom = "2026.08.00"
 appcompat = "1.8.0"
 miuix = "0.9.3"
+backdrop = "2.0.0"
 yukihookapi = "1.3.2"
 kavaref = "1.1.0"
 junit = "4.13.2"
+aboutlibraries = "15.1.1"
+kotlinxSerializationJson = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -18,13 +21,19 @@ androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", versi
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 miuix-ui = { group = "top.yukonga.miuix.kmp", name = "miuix-ui", version.ref = "miuix" }
 miuix-icons = { group = "top.yukonga.miuix.kmp", name = "miuix-icons", version.ref = "miuix" }
 miuix-squircle = { group = "top.yukonga.miuix.kmp", name = "miuix-squircle", version.ref = "miuix" }
+miuix-blur = { group = "top.yukonga.miuix.kmp", name = "miuix-blur", version.ref = "miuix" }
+capsule = { group = "io.github.kyant0", name = "capsule", version = "2.1.3" }
+backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
 yukihookapi-api = { group = "com.highcapable.yukihookapi", name = "api", version.ref = "yukihookapi" }
 yukihookapi-ksp-xposed = { group = "com.highcapable.yukihookapi", name = "ksp-xposed", version.ref = "yukihookapi" }
 xposed-api = { group = "de.robv.android.xposed", name = "api", version = "82" }
@@ -32,9 +41,16 @@ kavaref-bom = { module = "com.highcapable.kavaref:kavaref-bom", version.ref = "k
 kavaref-core = { module = "com.highcapable.kavaref:kavaref-core" }
 kavaref-android = { module = "com.highcapable.kavaref:kavaref-android" }
 kavaref-extension = { module = "com.highcapable.kavaref:kavaref-extension" }
+gson = { group = "com.google.code.gson", name = "gson", version = "2.14.0" }
+materialKolor-utilities = { group = "com.materialkolor", name = "material-color-utilities", version = "4.1.1" }
+navigationevent-compose = { group = "androidx.navigationevent", name = "navigationevent-compose", version = "1.1.2" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+aboutlibraries = { id = "com.mikepenz.aboutlibraries.plugin", version.ref = "aboutlibraries" }

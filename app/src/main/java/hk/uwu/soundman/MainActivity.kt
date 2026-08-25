@@ -1,6 +1,7 @@
 package hk.uwu.soundman
 
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -8,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
+import com.highcapable.kavaref.extension.classOf
 import hk.uwu.soundman.data.APP_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.data.InstalledAppsAccess
 import hk.uwu.soundman.data.PermissionCatalog
@@ -18,7 +20,7 @@ import hk.uwu.soundman.ipc.PreferredDeviceSync
 import hk.uwu.soundman.log.AppLog
 import hk.uwu.soundman.overlay.OverlayHostService
 import hk.uwu.soundman.overlay.OverlayOpenRequest
-import hk.uwu.soundman.ui.HomeScreen
+import hk.uwu.soundman.ui.screen.MainScreen
 
 /**
  * 模块主页。音量调节只出现在悬浮窗；侧栏入口走 [hk.uwu.soundman.overlay.OverlayLaunchActivity]，不经过本页。
@@ -125,7 +127,7 @@ class MainActivity : ComponentActivity() {
             )
         }
         setContent {
-            HomeScreen(
+            MainScreen(
                 settingsStore = settingsStore,
                 onOpenOverlay = ::requestOverlay,
             )
@@ -176,7 +178,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun probeSystemDevice(): PreferredDeviceSync.DeviceSpec? {
         val probe = SystemMediaDeviceProbe.createForAppProcess() ?: return null
-        val audioManager = getSystemService(android.media.AudioManager::class.java) ?: return null
+        val audioManager = getSystemService(classOf<AudioManager>()) ?: return null
         return try {
             probe.probe(audioManager)
         } catch (error: Throwable) {

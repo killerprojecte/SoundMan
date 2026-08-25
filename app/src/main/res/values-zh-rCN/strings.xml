@@ -21,6 +21,44 @@
     <string name="home_xposed_active">模块已激活</string>
     <string name="home_xposed_inactive">模块未激活</string>
     <string name="home_xposed_inactive_hint">请在 Xposed 管理器中启用模块，并勾选系统框架、系统界面以及其他需要生效的应用</string>
+    <string name="home_status_working">工作中</string>
+    <string name="home_status_inactive">未激活</string>
+    <string name="home_working_version">版本：%1$s</string>
+    <string name="status_card">状态</string>
+    <string name="module_is_activated">模块已激活</string>
+    <string name="module_not_activated">模块未激活</string>
+    <string name="home_module_version_summary">构建 %1$s · %2$s</string>
+    <string name="home_open_overlay_summary">打开悬浮音量和输出设备面板</string>
+    <string name="home_root_warning_title">Root 不可用</string>
+    <string name="home_root_warning_desc">部分功能依赖 Root 权限，请在 Root 管理器中授予本应用 Root 权限</string>
+    <string name="home_update_title">版本更新</string>
+    <string name="home_update_current">当前提交</string>
+    <string name="home_update_latest">最新提交</string>
+    <string name="home_update_checking">检查中…</string>
+    <string name="home_update_unknown">未知</string>
+    <string name="home_update_warning_title">发现版本更新</string>
+    <string name="home_update_warning_desc">当前 %1$s，最新 %2$s</string>
+
+    <string name="nav_home">首页</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_about">关于</string>
+
+    <string name="about_device_name">设备</string>
+    <string name="about_android_version">Android 版本</string>
+    <string name="about_system_version">系统版本</string>
+    <string name="about_author">开发者</string>
+
+    <string name="credits_github_title">GitHub 仓库</string>
+    <string name="credits_github_desc">查看源码、问题反馈与发布版本</string>
+    <string name="credits_contributors_title">鸣谢人员</string>
+    <string name="credits_contributors_desc">查看参与项目开发、测试与支持的人员名单</string>
+    <string name="credits_contributors_loading">正在加载鸣谢人员名单…</string>
+    <string name="credits_contributors_load_failed">获取鸣谢人员名单失败，请稍后重试</string>
+    <string name="credits_contributors_retry">重试</string>
+    <string name="credits_contributors_empty">暂无鸣谢人员信息</string>
+    <string name="licenses_name">开源许可</string>
+    <string name="licenses_name_summary">查看我们引用了哪些库</string>
+    <string name="licenses_placeholder">许可证信息将在此显示</string>
     <string name="overlay_channel_name">SoundMan 悬浮面板</string>
     <string name="overlay_channel_description">保持应用音量与输出设备面板可见</string>
     <string name="overlay_notification_title">SoundMan 面板正在显示</string>
@@ -61,4 +99,10 @@
     <string name="rule_corrupted_message">无法读取已保存规则。请检查日志并重新保存该应用的规则。</string>
 
     <string name="runtime_system_audio_provider">系统音频功能由 Xposed system_server 模块提供</string>
+
+    <string name="home_more">更多</string>
+    <string name="home_more_kill_systemui">重启系统界面</string>
+    <string name="home_more_kill_systemui_summary">强制停止并重启系统界面</string>
+    <string name="home_more_kill_systemui_success">系统界面正在重启…</string>
+    <string name="home_more_kill_systemui_failed">重启系统界面失败</string>
 </resources>

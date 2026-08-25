@@ -1,11 +1,10 @@
 package hk.uwu.soundman.ui
 
 import android.content.Context
-import com.highcapable.yukihookapi.YukiHookAPI
 import hk.uwu.soundman.generated.AppProperties
-import hk.uwu.soundman.ui.XposedStatusCopy.executorName
 
 private const val APP_AUTHOR = "AnserJim"
+
 
 /**
  * 主页「关于」卡片的展示数据。
@@ -104,58 +103,5 @@ object GitRepoCopy {
         } else {
             FALLBACK_GITHUB_URL
         }
-    }
-}
-
-/**
- * Xposed / LSPosed 激活状态。
- *
- * @param active 模块是否已在框架中启用
- * @param executorName 框架名；未激活时可能为空
- * @param apiLevel 框架 API；未知为 0
- */
-data class XposedStatusInfo(
-    val active: Boolean,
-    val executorName: String,
-    val apiLevel: Int,
-) {
-    companion object {
-        /**
-         * 读取 YukiHook 注入的模块状态。回到前台时应再读一次。
-         */
-        fun load(): XposedStatusInfo = XposedStatusInfo(
-            active = YukiHookAPI.Status.isModuleActive,
-            executorName = YukiHookAPI.Status.Executor.name,
-            apiLevel = YukiHookAPI.Status.Executor.apiLevel,
-        )
-    }
-}
-
-/**
- * 主页 Xposed 卡片文案规则。
- *
- * 动机：激活态才展示框架名；空白名称不能直接上屏。
- */
-object XposedStatusCopy {
-    /**
-     * 未激活时只展示引导，不展示可能为空的框架名。
-     */
-    fun showExecutor(active: Boolean): Boolean = active
-
-    /**
-     * 框架名为空时回退到 Xposed，避免卡片出现空白副标题。
-     */
-    fun executorName(raw: String): String = raw.trim().ifBlank { "Xposed" }
-
-    /**
-     * API 为 0 视为未知，只保留框架名。
-     *
-     * @param name 已经过 [executorName] 处理的展示名
-     * @param apiLevel 框架 API
-     */
-    fun executorLine(name: String, apiLevel: Int): String {
-        require(name.isNotBlank()) { "executor display name is blank" }
-        require(apiLevel >= 0) { "apiLevel must not be negative" }
-        return if (apiLevel == 0) name else "$name · API $apiLevel"
     }
 }

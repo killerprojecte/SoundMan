@@ -148,7 +148,7 @@ internal object BlurHostTokens {
         if (isOrdinarySurface(purpose)) OverlayGlassFill else requestedTint
 }
 
-private val LocalSmoothCornersEnabled = staticCompositionLocalOf<Boolean?> { null }
+private val LocalSmoothCornersEnabled = staticCompositionLocalOf { false }
 
 /** 为主页或悬浮面板中的所有玻璃表面提供统一的平滑圆角设置。 */
 @Composable
@@ -197,9 +197,7 @@ internal fun Modifier.blurMaterial(
     tint: Color = OverlayGlassFill,
     border: Color? = OverlayGlassBorder,
 ): Modifier {
-    val smoothCornersEnabled = checkNotNull(LocalSmoothCornersEnabled.current) {
-        "BlurMaterialHost is required"
-    }
+    val smoothCornersEnabled = LocalSmoothCornersEnabled.current
     val borderWidth = 1.dp
     val shapePolicy = GlassShapeTokens.policy(purpose, smoothCornersEnabled)
     val geometry = GlassShapeTokens.geometry(
@@ -245,9 +243,7 @@ internal fun Modifier.glassBorder(
     color: Color,
     width: Dp = 1.dp,
 ): Modifier {
-    val smoothCornersEnabled = checkNotNull(LocalSmoothCornersEnabled.current) {
-        "BlurMaterialHost is required"
-    }
+    val smoothCornersEnabled = LocalSmoothCornersEnabled.current
     val shapePolicy = GlassShapeTokens.policy(purpose, smoothCornersEnabled)
     val geometry = GlassShapeTokens.geometry(
         purpose = purpose,
