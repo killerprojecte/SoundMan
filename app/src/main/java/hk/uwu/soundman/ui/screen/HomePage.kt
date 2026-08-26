@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DoNotDisturb
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.highcapable.yukihookapi.YukiHookAPI
 import hk.uwu.soundman.R
@@ -71,6 +73,9 @@ private object UpdateInfoCache {
     var latestCommitHash: String? = null
 }
 
+private const val STAR_CARD_PREFS_NAME = "soundman_home_cards"
+private const val STAR_CARD_DISMISSED_KEY = "star_card_dismissed"
+
 /**
  * 首页：模块状态 + 模块信息 + 更新信息 + 打开音量面板按钮。
  *
@@ -91,6 +96,24 @@ fun HomePage(
 
     var latestCommitHash by remember { mutableStateOf<String?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
+
+    // Star 卡片：dev 通道始终显示，其他通道点击后持久化 dismiss 状态
+    val isDevChannel = AppProperties.BUILD_CHANNEL == "dev"
+    val starCardPrefs = remember {
+        context.getSharedPreferences(
+            STAR_CARD_PREFS_NAME,
+            android.content.Context.MODE_PRIVATE
+        )
+    }
+    var starCardDismissed by remember {
+        mutableStateOf(
+            !isDevChannel && starCardPrefs.getBoolean(
+                STAR_CARD_DISMISSED_KEY,
+                false
+            )
+        )
+    }
+    val showStarCard = isDevChannel || !starCardDismissed
 
     LaunchedEffect(Unit) {
         hasRoot = withContext(Dispatchers.IO) {
@@ -214,6 +237,20 @@ fun HomePage(
                     UpdateWarningCard(
                         currentHash = AppProperties.GIT_HASH.take(7),
                         latestHash = latestCommitHash?.take(7).orEmpty(),
+                    )
+                }
+            }
+
+            @Suppress("KotlinConstantConditions")
+            if (showStarCard) {
+                item(key = "star_card") {
+                    StarCard(
+                        onDismissed = {
+                            if (!isDevChannel) {
+                                starCardPrefs.edit { putBoolean(STAR_CARD_DISMISSED_KEY, true) }
+                                starCardDismissed = true
+                            }
+                        },
                     )
                 }
             }
@@ -343,10 +380,16 @@ private fun UpdateWarningCard(currentHash: String, latestHash: String) {
         colors = CardDefaults.defaultColors(color = palette.container),
         insideMargin = PaddingValues(14.dp),
         onClick = {
+            val targetUrl =
+                if (AppProperties.BUILD_CHANNEL == "canary" || AppProperties.BUILD_CHANNEL == "dev") {
+                    "https://github.com/killerprojecte/SoundMan/actions"
+                } else {
+                    "https://github.com/killerprojecte/SoundMan/releases"
+                }
             context.startActivity(
                 Intent(
                     Intent.ACTION_VIEW,
-                    "https://github.com/killerprojecte/SoundMan/releases".toUri(),
+                    targetUrl.toUri(),
                 ),
             )
         },
@@ -418,5 +461,65 @@ private fun UpdateInfoCard(
                 else -> latestHash
             },
         )
+    }
+}
+
+/**
+ * Star 引导卡片，请求用户在 GitHub 上给项目点 Star。
+ *
+ * 点击后跳转 GitHub 主页并标记 dismiss；dev 通道始终显示。
+ */
+@Composable
+private fun StarCard(onDismissed: () -> Unit) {
+    val context = LocalContext.current
+    val palette = StatusCardPalette(
+        container = Color(0xFFFFF8E1),
+        icon = Color(0xFFF5A623),
+        title = Color(0xFF7A5A00),
+        summary = Color(0xFF8A6B00),
+    )
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(108.dp),
+        colors = CardDefaults.defaultColors(color = palette.container),
+        insideMargin = PaddingValues(14.dp),
+        onClick = {
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    "https://github.com/killerprojecte/SoundMan".toUri(),
+                ),
+            )
+            onDismissed()
+        },
+        pressFeedbackType = PressFeedbackType.Tilt,
+        showIndication = false,
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Icon(
+                imageVector = Icons.Outlined.StarBorder,
+                contentDescription = null,
+                tint = palette.icon,
+                modifier = Modifier
+                    .size(108.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 50.dp, y = 44.dp),
+            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.home_star_title),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.title,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.home_star_desc),
+                    style = MiuixTheme.textStyles.body2,
+                    color = palette.summary,
+                )
+            }
+        }
     }
 }

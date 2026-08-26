@@ -38,6 +38,8 @@
     <string name="home_update_unknown">未知</string>
     <string name="home_update_warning_title">發現版本更新</string>
     <string name="home_update_warning_desc">當前 %1$s，最新 %2$s</string>
+    <string name="home_star_title">在 GitHub 上給 Star</string>
+    <string name="home_star_desc">如果你喜歡 SoundMan，請考慮在 GitHub 上給項目點個 Star</string>
 
     <string name="nav_home">主頁</string>
     <string name="nav_settings">設定</string>
@@ -50,6 +52,8 @@
 
     <string name="credits_github_title">GitHub 倉庫</string>
     <string name="credits_github_desc">查看原始碼、問題反饋與發佈版本</string>
+    <string name="credits_afdian_title">愛發電贊助</string>
+    <string name="credits_afdian_desc">支持模組持續開發</string>
     <string name="credits_contributors_title">鳴謝人員</string>
     <string name="credits_contributors_desc">查看參與項目開發、測試與支援的人員名單</string>
     <string name="credits_contributors_loading">正在載入鳴謝人員名單…</string>

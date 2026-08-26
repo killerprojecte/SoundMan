@@ -40,6 +40,7 @@ import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.kavaref.extension.classOf
 import com.highcapable.kavaref.extension.makeAccessible
 import com.highcapable.kavaref.extension.toClass
+import com.highcapable.kavaref.extension.toClassOrNull
 import hk.uwu.soundman.R
 import hk.uwu.soundman.data.AudioDeviceScan
 import hk.uwu.soundman.data.PanelPlaybackRow
@@ -2779,10 +2780,11 @@ class SystemUiBuiltinVolumePanel(
          * - updateExpandButtonTint：bionics 高级材质下 `setImageTintList(null)`（图标用
          *   drawable 原色，不额外上色）；否则用官方颜色资源 `getExpandedIconColorRes`
          *   对应的 blur 色（普通材质路径）。
-         * - initExpandButtonBlend：高级材质下 `Util.setMiViewBlurAndBlendColor(button, 3,
-         *   MiuiVolumeDialogRes.getExpandedIconBlandColor())` 让图标与玻璃背景融合
-         *   （miuix ColorBlendToken 渲染，SoundMan 直接调用官方工具复刻）；否则
-         *   `MiBlurCompat.setMiViewBlurModeCompat(button, 0)` 关闭 blur 走静态取色。
+         * - blend 路径（[applyOfficialExpandButtonBlend]）：
+         *   - OS4 `Util.isAdvancedMaterialEffective` 或 OS3 `MiBlurCompat.getBackgroundBlurOpenedInDefaultTheme`
+         *     为真时，`Util.setMiViewBlurAndBlendColor(button, 3, getExpandedIconBlandColor())`
+         *     让图标与玻璃背景动态融合（miuix ColorBlendToken 渲染）；
+         *   - 否则 `MiBlurCompat.setMiViewBlurModeCompat(button, 0)` 关闭 blur 走静态取色。
          *
          * blend 依赖 view 已 attach 到窗口（blur 采样），未 attach 时先只做 tint，
          * attach 后再补 blend。任何一步失败都回退静态 blur 色资源，绝不让取色失败
@@ -2821,7 +2823,17 @@ class SystemUiBuiltinVolumePanel(
         }
 
         /**
-         * 参考官方 MiuiVolumeDialogView.initExpandButtonBlend：高级材质走官方 blend，否则关 blur。
+         * 参考官方 MiuiVolumeDialogView.updateExpandButtonColor / initExpandButtonBlend：
+         *
+         * - OS4（plugin 18.x）：`Util.isAdvancedMaterialEffective(ctx)` 为真走官方 blend
+         *   （`Util.setMiViewBlurAndBlendColor(button, 3, getExpandedIconBlandColor())`）；
+         *   否则 `MiBlurCompat.setMiViewBlurModeCompat(button, 0)` 关 blur 走静态取色。
+         * - OS3（plugin 17.x）：无 `isAdvancedMaterialEffective`，回退到
+         *   `MiBlurCompat.getBackgroundBlurOpenedInDefaultTheme(ctx)`（jadx 逆向官方条件）；
+         *   为真时走同一条 blend 路径，否则关 blur。
+         *
+         * 两代插件各自缺失对方的探测 API（软探测恒 false），因此同一棵树在两代上
+         * 命中的分支恰好等于各自官方代码的分支。
          *
          * @param onBlendFallback blend 失败时的静态取色回退；ImageView 用 setImageTintList，
          *   TextView 用 setTextColor。
@@ -2835,41 +2847,58 @@ class SystemUiBuiltinVolumePanel(
                 (view as? ImageView)?.setImageTintList(ColorStateList.valueOf(tint))
             },
         ) {
+            // OS4 首查：Util.isAdvancedMaterialEffective(Context)
             val advanced = runCatching {
-                val util = pluginClassLoader.loadClass("com.android.systemui.miui.volume.Util")
-                val method = util.methods.firstOrNull {
-                    it.name == "isAdvancedMaterialEffective" &&
-                            it.parameterCount == 1 && it.parameterTypes[0] == classOf<Context>()
-                }
-                method?.invoke(null, targetContext) as? Boolean ?: false
+                val utilClass = UTIL_CLASS.toClassOrNull(pluginClassLoader)
+                    ?: return@runCatching false
+                val resolved = utilClass.resolve().optional(silent = true)
+                resolved.firstMethodOrNull { name = "isAdvancedMaterialEffective" }
+                    ?.invokeQuietly<Boolean>(targetContext) ?: false
             }.getOrDefault(false)
+
             if (!advanced) {
-                runCatching {
-                    val compat = pluginClassLoader.loadClass("miui.systemui.util.MiBlurCompat")
-                    compat.getMethod(
-                        "setMiViewBlurModeCompat",
-                        classOf<View>(),
-                        classOf<Int>()
-                    )
-                        .invoke(null, button, 0)
-                }.onFailure { error ->
-                    log(Log.WARN, TAG, "Official blur-off failed for expand button", error)
+                // OS3 回退：MiBlurCompat.getBackgroundBlurOpenedInDefaultTheme(Context)
+                // jadx 逆向 MiuiVolumeDialogView.updateExpandButtonColor 的官方条件。
+                val themeBlur = runCatching {
+                    val compatClass = MI_BLUR_COMPAT_CLASS.toClassOrNull(pluginClassLoader)
+                        ?: return@runCatching false
+                    val resolved = compatClass.resolve().optional(silent = true)
+                    resolved.firstMethodOrNull { name = "getBackgroundBlurOpenedInDefaultTheme" }
+                        ?.invokeQuietly<Boolean>(targetContext) ?: false
+                }.getOrDefault(false)
+
+                if (!themeBlur) {
+                    runCatching {
+                        val compatClass = MI_BLUR_COMPAT_CLASS.toClassOrNull(pluginClassLoader)
+                            ?: error("MiBlurCompat class not found")
+                        val resolved = compatClass.resolve().optional(silent = true)
+                        val method = resolved.firstMethodOrNull { name = "setMiViewBlurModeCompat" }
+                            ?: error("setMiViewBlurModeCompat not found")
+                        method.invokeQuietly(button, 0)
+                    }.onFailure { error ->
+                        log(Log.WARN, TAG, "Official blur-off failed for expand button", error)
+                    }
+                    return
                 }
-                return
+                // themeBlur=true：OS3 主题模糊生效，继续走下方 blend 路径
             }
+
+            // blend 路径（OS4 advanced 或 OS3 themeBlur 均到达此处）
             runCatching {
-                val res =
-                    pluginClassLoader.loadClass("com.android.systemui.miui.volume.MiuiVolumeDialogRes")
-                val blend = res.getMethod("getExpandedIconBlandColor").invoke(null)
+                val resClass = MIUI_VOLUME_DIALOG_RES_CLASS.toClassOrNull(pluginClassLoader)
+                    ?: error("MiuiVolumeDialogRes class not found")
+                val resResolved = resClass.resolve().optional(silent = true)
+                val blend = resResolved.firstMethodOrNull { name = "getExpandedIconBlandColor" }
+                    ?.invokeQuietly<Any>()
                     ?: error("getExpandedIconBlandColor returned null")
-                val util = pluginClassLoader.loadClass("com.android.systemui.miui.volume.Util")
-                val setBlend = util.methods.firstOrNull {
-                    it.name == "setMiViewBlurAndBlendColor" &&
-                            it.parameterCount == 3 &&
-                            it.parameterTypes[0] == classOf<View>() &&
-                            it.parameterTypes[1] == classOf<Int>()
-                } ?: error("Util.setMiViewBlurAndBlendColor missing")
-                setBlend.invoke(null, button, 3, blend)
+
+                val utilClass = UTIL_CLASS.toClassOrNull(pluginClassLoader)
+                    ?: error("Util class not found")
+                val utilResolved = utilClass.resolve().optional(silent = true)
+                val setBlend =
+                    utilResolved.firstMethodOrNull { name = "setMiViewBlurAndBlendColor" }
+                        ?: error("Util.setMiViewBlurAndBlendColor missing")
+                setBlend.invokeQuietly(button, 3, blend)
             }.onFailure { error ->
                 log(
                     Log.WARN,
@@ -3680,6 +3709,10 @@ class SystemUiBuiltinVolumePanel(
         private const val VOLUME_DIALOG_VIEW_CLASS =
             "com.android.systemui.miui.volume.MiuiVolumeDialogView"
         private const val VOLUME_COLUMN_CLASS = "com.android.systemui.miui.volume.VolumeColumn"
+        private const val UTIL_CLASS = "com.android.systemui.miui.volume.Util"
+        private const val MI_BLUR_COMPAT_CLASS = "miui.systemui.util.MiBlurCompat"
+        private const val MIUI_VOLUME_DIALOG_RES_CLASS =
+            "com.android.systemui.miui.volume.MiuiVolumeDialogRes"
         private const val PANEL_EDGE_MARGIN_DP = 12
         private const val PANEL_HORIZONTAL_PADDING_DP = 8
         private const val PANEL_VERTICAL_PADDING_DP = 8

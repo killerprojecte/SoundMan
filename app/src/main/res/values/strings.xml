@@ -40,6 +40,8 @@
     <string name="home_update_unknown">Unknown</string>
     <string name="home_update_warning_title">Update available</string>
     <string name="home_update_warning_desc">Current %1$s, latest %2$s</string>
+    <string name="home_star_title">Star on GitHub</string>
+    <string name="home_star_desc">If you like SoundMan, please consider giving the project a Star on GitHub</string>
 
     <string name="nav_home">Home</string>
     <string name="nav_settings">Settings</string>
@@ -53,6 +55,8 @@
 
     <string name="credits_github_title">GitHub Repository</string>
     <string name="credits_github_desc">Source code, issues and releases</string>
+    <string name="credits_afdian_title">Afdian Sponsor</string>
+    <string name="credits_afdian_desc">Support ongoing module development</string>
     <string name="credits_contributors_title">Contributors</string>
     <string name="credits_contributors_desc">View the people who helped develop, test, and support this project</string>
     <string name="credits_contributors_loading">Loading contributors…</string>
