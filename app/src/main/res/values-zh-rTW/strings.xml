@@ -105,4 +105,13 @@
     <string name="home_more_kill_systemui_summary">強制停止並重啟系統介面</string>
     <string name="home_more_kill_systemui_success">系統介面正在重啟…</string>
     <string name="home_more_kill_systemui_failed">重啟系統介面失敗</string>
+
+    <string name="app_blacklist_title">在音量面板中隱藏應用</string>
+    <string name="app_blacklist_search_hint">搜尋應用</string>
+    <string name="app_blacklist_empty">未找到應用</string>
+    <string name="app_blacklist_loading">載入中…</string>
+    <string name="app_blacklist_close">關閉</string>
+    <string name="app_blacklist_save">儲存</string>
+    <string name="app_blacklist_system_app">系統</string>
+    <string name="app_blacklist_count">已隱藏 %1$d 個應用</string>
 </resources>

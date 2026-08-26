@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
@@ -27,11 +28,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kyant.backdrop.Backdrop
 import hk.uwu.soundman.R
+import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.AppSettingsStore
+import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
 import hk.uwu.soundman.ui.basic.SharedScrollBehavior
 import hk.uwu.soundman.ui.basic.overScrollVertical
 import hk.uwu.soundman.ui.components.SettingSwitchItem
+import hk.uwu.soundman.ui.components.apppicker.AppPickerBottomSheet
+import hk.uwu.soundman.ui.components.apppicker.AppPickerStrings
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
@@ -44,9 +52,12 @@ fun SettingsPage(
     paddingValues: PaddingValues,
     scrollBehavior: SharedScrollBehavior,
     settingsStore: AppSettingsStore,
+    liquidGlassBackdrop: Backdrop? = null,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
     var settings by remember(settingsStore) { mutableStateOf(settingsStore.read()) }
+    var showBlacklistPicker by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -60,13 +71,19 @@ fun SettingsPage(
 
     val lazyListState = rememberLazyListState()
 
-    // 对齐 NexioSchedule-ref：paddingValues 来自 Scaffold(topBar={})，只包含状态栏 inset（稳定值）。
-    // topBarHeightDp 来自 scrollBehavior.currentHeightPx（由 onSizeChanged 直接更新，与滚动同步）。
-    // 两者叠加 = 状态栏高度 + TopBar 高度，避免 SubcomposeLayout 帧延迟。
     val density = LocalDensity.current
     val topBarHeightDp = with(density) { scrollBehavior.currentHeightPx.toDp() }
 
-    // TopBar 在 MainScreen 统一渲染，页面只需提供 scrollBehavior 和内容
+    val blacklistStore = remember(context) {
+        SharedPreferencesAppBlacklistStore(
+            context.getSharedPreferences(
+                APP_BLACKLIST_PREFERENCES_NAME,
+                android.content.Context.MODE_PRIVATE
+            )
+        )
+    }
+    var blacklistedPackages by remember(blacklistStore) { mutableStateOf(blacklistStore.readAll()) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = lazyListState,
@@ -129,6 +146,42 @@ fun SettingsPage(
                     onCheckedChange = { settings = settingsStore.setAlarmFirstEnabled(it) },
                 )
             }
+            item(key = "app_blacklist") {
+                Card {
+                    ArrowPreference(
+                        title = stringResource(R.string.app_blacklist_title),
+                        summary = stringResource(
+                            R.string.app_blacklist_count,
+                            blacklistedPackages.size
+                        ),
+                        onClick = { showBlacklistPicker = true },
+                        holdDownState = showBlacklistPicker,
+                    )
+                }
+            }
         }
+    }
+
+    if (showBlacklistPicker) {
+        val pickerStrings = AppPickerStrings(
+            title = stringResource(R.string.app_blacklist_title),
+            closeActionDescription = stringResource(R.string.app_blacklist_close),
+            saveActionDescription = stringResource(R.string.app_blacklist_save),
+            systemAppLabel = stringResource(R.string.app_blacklist_system_app),
+            loadingText = stringResource(R.string.app_blacklist_loading),
+            emptyText = stringResource(R.string.app_blacklist_empty),
+        )
+        AppPickerBottomSheet(
+            show = showBlacklistPicker,
+            strings = pickerStrings,
+            initialSelection = blacklistedPackages,
+            hideSystemApps = settings.hideSystemAppsEnabled,
+            onDismiss = { showBlacklistPicker = false },
+            onSave = { newSelection ->
+                blacklistStore.replaceAll(newSelection)
+                blacklistedPackages = newSelection
+                showBlacklistPicker = false
+            },
+        )
     }
 }

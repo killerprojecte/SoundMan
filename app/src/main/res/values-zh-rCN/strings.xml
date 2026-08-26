@@ -105,4 +105,13 @@
     <string name="home_more_kill_systemui_summary">强制停止并重启系统界面</string>
     <string name="home_more_kill_systemui_success">系统界面正在重启…</string>
     <string name="home_more_kill_systemui_failed">重启系统界面失败</string>
+
+    <string name="app_blacklist_title">在音量面板中隐藏应用</string>
+    <string name="app_blacklist_search_hint">搜索应用</string>
+    <string name="app_blacklist_empty">未找到应用</string>
+    <string name="app_blacklist_loading">加载中…</string>
+    <string name="app_blacklist_close">关闭</string>
+    <string name="app_blacklist_save">保存</string>
+    <string name="app_blacklist_system_app">系统</string>
+    <string name="app_blacklist_count">已隐藏 %1$d 个应用</string>
 </resources>

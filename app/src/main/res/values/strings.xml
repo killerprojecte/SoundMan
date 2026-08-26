@@ -112,4 +112,13 @@
     <string name="home_more_kill_systemui_summary">Force stop and restart the system interface</string>
     <string name="home_more_kill_systemui_success">System UI is restarting…</string>
     <string name="home_more_kill_systemui_failed">Failed to restart System UI</string>
+
+    <string name="app_blacklist_title">Hide apps from volume panel</string>
+    <string name="app_blacklist_search_hint">Search apps</string>
+    <string name="app_blacklist_empty">No apps found</string>
+    <string name="app_blacklist_loading">Loading…</string>
+    <string name="app_blacklist_close">Close</string>
+    <string name="app_blacklist_save">Save</string>
+    <string name="app_blacklist_system_app">System</string>
+    <string name="app_blacklist_count">%1$d apps hidden</string>
 </resources>

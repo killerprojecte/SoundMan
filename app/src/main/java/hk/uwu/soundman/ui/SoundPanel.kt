@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import hk.uwu.soundman.R
+import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.APP_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.data.ActiveMediaAppsState
 import hk.uwu.soundman.data.AudioDeviceScan
@@ -76,6 +77,7 @@ import hk.uwu.soundman.data.InstalledAppsAccess
 import hk.uwu.soundman.data.PermissionCatalog
 import hk.uwu.soundman.data.RULE_PREFERENCES_NAME
 import hk.uwu.soundman.data.RuleStore
+import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
 import hk.uwu.soundman.data.SharedPreferencesAppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesRuleStore
 import hk.uwu.soundman.ipc.PreferredDeviceSync
@@ -127,6 +129,15 @@ fun SoundPanel(
         )
     }
     val appSettings = remember(appSettingsStore) { appSettingsStore.read() }
+    val blacklistStore = remember(applicationContext) {
+        SharedPreferencesAppBlacklistStore(
+            applicationContext.getSharedPreferences(
+                APP_BLACKLIST_PREFERENCES_NAME,
+                Context.MODE_PRIVATE
+            )
+        )
+    }
+    val blacklistedPackages = remember(blacklistStore) { blacklistStore.readAll() }
     val hostSource = remember(applicationContext, hasInstalledAppsAccess) {
         HostPlaybackSource(applicationContext, ruleStore, installedAppsAccess)
     }
@@ -313,10 +324,9 @@ fun SoundPanel(
                             when (val currentMediaState = mediaState) {
                                 is ActiveMediaAppsState.Error -> PreferencesUnavailable(stringResource(R.string.panel_host_error))
                                 is ActiveMediaAppsState.Available -> AppVolumeList(
-                                    apps = if (appSettings.hideSystemAppsEnabled) {
-                                        currentApps.filter { !it.isSystemApp }
-                                    } else {
-                                        currentApps
+                                    apps = currentApps.filter { app ->
+                                        app.packageName !in blacklistedPackages &&
+                                                (!appSettings.hideSystemAppsEnabled || !app.isSystemApp)
                                     },
                                     rules = rules,
                                     readDefault = ruleStore::readOrDefault,

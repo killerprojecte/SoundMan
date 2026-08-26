@@ -128,6 +128,7 @@ object RuleStoreBridgeContract {
 class RuleStoreBridgeProvider : ContentProvider() {
     private lateinit var store: RuleStore
     private lateinit var playbackSource: HostPlaybackSource
+    private lateinit var blacklistStore: AppBlacklistStore
 
     @Volatile
     private var panelSnapshot =
@@ -141,6 +142,12 @@ class RuleStoreBridgeProvider : ContentProvider() {
                 Context.MODE_PRIVATE
             )
         )
+        blacklistStore = SharedPreferencesAppBlacklistStore(
+            context.getSharedPreferences(
+                APP_BLACKLIST_PREFERENCES_NAME,
+                Context.MODE_PRIVATE
+            )
+        )
         playbackSource = HostPlaybackSource(
             context,
             store,
@@ -149,23 +156,32 @@ class RuleStoreBridgeProvider : ContentProvider() {
         playbackSource.observe { state ->
             try {
                 panelSnapshot = when (state) {
-                    is ActiveMediaAppsState.Available -> PanelPlaybackSnapshot(
-                        status = PanelPlaybackStatus.AVAILABLE,
-                        rows = state.apps.map { app ->
-                            val rule = store.readOrDefault(app.packageName, app.uid)
-                            PanelPlaybackRow(
-                                packageName = app.packageName,
-                                uid = app.uid,
-                                volumePercent = rule.volumePercent,
-                                outputTarget = rule.outputTarget,
-                                followsSystemAfterDisconnect = rule.followsSystemAfterDisconnect,
-                                label = app.label.takeIf(String::isNotBlank),
-                                iconPng = encodePanelIcon(app.icon, app.packageName, app.uid),
-                                isSystemApp = app.isSystemApp,
-                            )
-                        },
-                        devices = playbackSource.currentDeviceScan().devices,
-                    )
+                    is ActiveMediaAppsState.Available -> {
+                        val blacklisted = blacklistStore.readAll()
+                        PanelPlaybackSnapshot(
+                            status = PanelPlaybackStatus.AVAILABLE,
+                            rows = state.apps
+                                .filter { it.packageName !in blacklisted }
+                                .map { app ->
+                                    val rule = store.readOrDefault(app.packageName, app.uid)
+                                    PanelPlaybackRow(
+                                        packageName = app.packageName,
+                                        uid = app.uid,
+                                        volumePercent = rule.volumePercent,
+                                        outputTarget = rule.outputTarget,
+                                        followsSystemAfterDisconnect = rule.followsSystemAfterDisconnect,
+                                        label = app.label.takeIf(String::isNotBlank),
+                                        iconPng = encodePanelIcon(
+                                            app.icon,
+                                            app.packageName,
+                                            app.uid
+                                        ),
+                                        isSystemApp = app.isSystemApp,
+                                    )
+                                },
+                            devices = playbackSource.currentDeviceScan().devices,
+                        )
+                    }
 
                     is ActiveMediaAppsState.Error -> PanelPlaybackSnapshot(
                         status = PanelPlaybackStatus.HOST_UNAVAILABLE,
