@@ -31,13 +31,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.kyant.backdrop.Backdrop
 import hk.uwu.soundman.R
 import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
+import hk.uwu.soundman.data.AppSettingsDefaults
 import hk.uwu.soundman.data.AppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
 import hk.uwu.soundman.ui.basic.SharedScrollBehavior
 import hk.uwu.soundman.ui.basic.overScrollVertical
+import hk.uwu.soundman.ui.components.SettingSliderItem
 import hk.uwu.soundman.ui.components.SettingSwitchItem
 import hk.uwu.soundman.ui.components.apppicker.AppPickerBottomSheet
 import hk.uwu.soundman.ui.components.apppicker.AppPickerStrings
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -127,6 +130,47 @@ fun SettingsPage(
                     checked = settings.systemUiBuiltinVolumePanelEnabled,
                     onCheckedChange = {
                         settings = settingsStore.setSystemUiBuiltinVolumePanelEnabled(it)
+                    },
+                )
+            }
+            item(key = "liquid_glass") {
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_liquid_glass),
+                    summary = stringResource(R.string.settings_liquid_glass_summary),
+                    checked = settings.liquidGlassEnabled,
+                    onCheckedChange = { settings = settingsStore.setLiquidGlassEnabled(it) },
+                )
+            }
+            item(key = "liquid_glass_blur_radius") {
+                var draftBlurRadius by remember(settings) {
+                    mutableStateOf(settings.liquidGlassBlurRadius.toFloat())
+                }
+                SettingSliderItem(
+                    title = stringResource(R.string.settings_liquid_glass_blur_radius),
+                    summary = stringResource(R.string.settings_liquid_glass_blur_radius_summary),
+                    value = draftBlurRadius,
+                    valueRange = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN.toFloat()..
+                            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX.toFloat(),
+                    steps = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX -
+                            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN - 1,
+                    enabled = settings.liquidGlassEnabled && settings.liquidGlassRefractionEnabled,
+                    valueLabel = draftBlurRadius.roundToInt().toString(),
+                    onValueChange = { draftBlurRadius = it },
+                    onValueChangeFinished = {
+                        settings = settingsStore.setLiquidGlassBlurRadius(
+                            draftBlurRadius.roundToInt()
+                        )
+                    },
+                )
+            }
+            item(key = "liquid_glass_refraction") {
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_liquid_glass_refraction),
+                    summary = stringResource(R.string.settings_liquid_glass_refraction_summary),
+                    checked = settings.liquidGlassRefractionEnabled,
+                    enabled = settings.liquidGlassEnabled,
+                    onCheckedChange = {
+                        settings = settingsStore.setLiquidGlassRefractionEnabled(it)
                     },
                 )
             }

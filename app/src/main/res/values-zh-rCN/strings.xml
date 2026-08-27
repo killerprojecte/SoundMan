@@ -18,6 +18,12 @@
     <string name="settings_hide_system_apps_summary">在音量面板中不显示系统应用</string>
     <string name="settings_alarm_first">闹钟优先</string>
     <string name="settings_alarm_first_summary">多设备分离输出时，第二输出流优先使用闹钟类型而非铃声类型</string>
+    <string name="settings_liquid_glass">液态玻璃</string>
+    <string name="settings_liquid_glass_summary">在内置面板的背景模糊之上叠加玻璃边缘光影与色散</string>
+    <string name="settings_liquid_glass_blur_radius">背景模糊度</string>
+    <string name="settings_liquid_glass_blur_radius_summary">折射背景的模糊半径（0–20），数值越小越清晰；仅在开启真实折射时生效</string>
+    <string name="settings_liquid_glass_refraction">真实折射</string>
+    <string name="settings_liquid_glass_refraction_summary">实时折射面板背后的画面；需要先开启液态玻璃</string>
     <string name="home_xposed_active">模块已激活</string>
     <string name="home_xposed_inactive">模块未激活</string>
     <string name="home_xposed_inactive_hint">请在 Xposed 管理器中启用模块，并勾选系统框架、系统界面以及其他需要生效的应用</string>

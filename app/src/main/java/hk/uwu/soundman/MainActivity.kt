@@ -81,6 +81,15 @@ class MainActivity : ComponentActivity() {
             volumePercentMirror = { enabled ->
                 SystemUiAppSettingsSync.persistVolumePercentEnabled(this, enabled)
             },
+            liquidGlassMirror = { enabled ->
+                SystemUiAppSettingsSync.persistLiquidGlassEnabled(this, enabled)
+            },
+            liquidGlassRefractionMirror = { enabled ->
+                SystemUiAppSettingsSync.persistLiquidGlassRefractionEnabled(this, enabled)
+            },
+            liquidGlassBlurRadiusMirror = { radius ->
+                SystemUiAppSettingsSync.persistLiquidGlassBlurRadius(this, radius)
+            },
         )
         try {
             SystemUiAppSettingsSync.persistBuiltinPanelEnabled(
@@ -123,6 +132,39 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize volume-percent setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassEnabled(
+                this,
+                settingsStore.read().liquidGlassEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassRefractionEnabled(
+                this,
+                settingsStore.read().liquidGlassRefractionEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass refraction setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassBlurRadius(
+                this,
+                settingsStore.read().liquidGlassBlurRadius,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass blur radius during startup",
                 error
             )
         }

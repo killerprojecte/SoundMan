@@ -19,6 +19,12 @@
     <string name="settings_hide_system_apps_summary">Don\'t show system apps in the volume panel</string>
     <string name="settings_alarm_first">Alarm priority for second stream</string>
     <string name="settings_alarm_first_summary">When routing to multiple devices, use alarm stream type for the second output instead of ringtone</string>
+    <string name="settings_liquid_glass">Liquid glass</string>
+    <string name="settings_liquid_glass_summary">Layer glass rim light and dispersion over the built-in panel background blur</string>
+    <string name="settings_liquid_glass_blur_radius">Background blur</string>
+    <string name="settings_liquid_glass_blur_radius_summary">Blur radius of the refracted background (0–20); lower is sharper. Applies only while true refraction is on</string>
+    <string name="settings_liquid_glass_refraction">True refraction</string>
+    <string name="settings_liquid_glass_refraction_summary">Refract the live content behind the panel in real time; requires liquid glass</string>
     <string name="home_github" translatable="false">GitHub</string>
     <string name="home_xposed_active">Module activated</string>
     <string name="home_xposed_inactive">Module not activated</string>

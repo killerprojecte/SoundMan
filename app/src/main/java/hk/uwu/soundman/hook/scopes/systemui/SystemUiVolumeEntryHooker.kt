@@ -29,6 +29,9 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
         builtinPanelEnabled = ::isBuiltinPanelEnabled,
         hideSystemAppsEnabled = ::isHideSystemAppsEnabled,
         volumePercentEnabled = ::isVolumePercentEnabled,
+        liquidGlassEnabled = ::isLiquidGlassEnabled,
+        liquidGlassRefractionEnabled = ::isLiquidGlassRefractionEnabled,
+        liquidGlassBlurRadius = ::liquidGlassBlurRadius,
     )
     private val pluginClassLoaderReader = SystemUiPluginClassLoader()
     private val pluginClassLoaderAttach = SystemUiPluginClassLoaderAttach()
@@ -312,6 +315,61 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
     } catch (error: Throwable) {
         YLog.error("Unable to read volume-percent setting through Yuki prefs", error)
         AppSettingsDefaults.VOLUME_PERCENT_ENABLED
+    }
+
+    private fun isLiquidGlassEnabled(): Boolean = try {
+        val modulePrefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        val value = modulePrefs.all()[AppSettingsKeys.LIQUID_GLASS]
+        when (value) {
+            null -> AppSettingsDefaults.LIQUID_GLASS_ENABLED
+            is Boolean -> value
+            else -> error(
+                "Invalid ${AppSettingsKeys.LIQUID_GLASS} type=${value.javaClass.name}",
+            )
+        }
+    } catch (error: Throwable) {
+        YLog.error("Unable to read liquid glass setting through Yuki prefs", error)
+        AppSettingsDefaults.LIQUID_GLASS_ENABLED
+    }
+
+    private fun isLiquidGlassRefractionEnabled(): Boolean = try {
+        val modulePrefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        val value = modulePrefs.all()[AppSettingsKeys.LIQUID_GLASS_REFRACTION]
+        when (value) {
+            null -> AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED
+            is Boolean -> value
+            else -> error(
+                "Invalid ${AppSettingsKeys.LIQUID_GLASS_REFRACTION} type=${value.javaClass.name}",
+            )
+        }
+    } catch (error: Throwable) {
+        YLog.error("Unable to read liquid glass refraction setting through Yuki prefs", error)
+        AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED
+    }
+
+    /** 模糊半径跨进程读取：容忍 Int/Long/String 漂移，非法值按默认处理，方向安全。 */
+    private fun liquidGlassBlurRadius(): Int = try {
+        val modulePrefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        val value = modulePrefs.all()[AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS]
+        val radius = when (value) {
+            null -> AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS
+            is Int -> value
+            is Long -> value.toInt()
+            is String -> value.toIntOrNull() ?: AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS
+            else -> {
+                YLog.warn(
+                    "Invalid ${AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS} type=${value.javaClass.name}",
+                )
+                AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS
+            }
+        }
+        radius.coerceIn(
+            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN,
+            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX,
+        )
+    } catch (error: Throwable) {
+        YLog.error("Unable to read liquid glass blur radius through Yuki prefs", error)
+        AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS
     }
 
     private fun writeLog(priority: Int, tag: String, message: String, throwable: Throwable?) {

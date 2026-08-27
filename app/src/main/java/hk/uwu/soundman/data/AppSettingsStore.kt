@@ -15,6 +15,9 @@ data class AppSettings(
     val systemUiBuiltinVolumePanelEnabled: Boolean = AppSettingsDefaults.SYSTEM_UI_BUILTIN_VOLUME_PANEL_ENABLED,
     val hideSystemAppsEnabled: Boolean = AppSettingsDefaults.HIDE_SYSTEM_APPS_ENABLED,
     val alarmFirstEnabled: Boolean = AppSettingsDefaults.ALARM_FIRST_ENABLED,
+    val liquidGlassEnabled: Boolean = AppSettingsDefaults.LIQUID_GLASS_ENABLED,
+    val liquidGlassRefractionEnabled: Boolean = AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED,
+    val liquidGlassBlurRadius: Int = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS,
 )
 
 /** 设置默认值，供存储实现与纯 JVM 测试共享。 */
@@ -24,6 +27,11 @@ object AppSettingsDefaults {
     const val SYSTEM_UI_BUILTIN_VOLUME_PANEL_ENABLED = false
     const val HIDE_SYSTEM_APPS_ENABLED = false
     const val ALARM_FIRST_ENABLED = false
+    const val LIQUID_GLASS_ENABLED = false
+    const val LIQUID_GLASS_REFRACTION_ENABLED = false
+    const val LIQUID_GLASS_BLUR_RADIUS = 20
+    const val LIQUID_GLASS_BLUR_RADIUS_MIN = 0
+    const val LIQUID_GLASS_BLUR_RADIUS_MAX = 20
 }
 
 /** SharedPreferences 键名的唯一来源，避免读写两端发生漂移。 */
@@ -33,6 +41,9 @@ object AppSettingsKeys {
     const val SYSTEM_UI_BUILTIN_VOLUME_PANEL = "system_ui_builtin_volume_panel_enabled"
     const val HIDE_SYSTEM_APPS = "hide_system_apps_enabled"
     const val ALARM_FIRST = "alarm_first_enabled"
+    const val LIQUID_GLASS = "liquid_glass_enabled"
+    const val LIQUID_GLASS_REFRACTION = "liquid_glass_refraction_enabled"
+    const val LIQUID_GLASS_BLUR_RADIUS = "liquid_glass_blur_radius"
 
     val all: Set<String> = setOf(
         SMOOTH_CORNERS,
@@ -40,6 +51,9 @@ object AppSettingsKeys {
         SYSTEM_UI_BUILTIN_VOLUME_PANEL,
         HIDE_SYSTEM_APPS,
         ALARM_FIRST,
+        LIQUID_GLASS,
+        LIQUID_GLASS_REFRACTION,
+        LIQUID_GLASS_BLUR_RADIUS,
     )
 }
 
@@ -66,6 +80,15 @@ interface AppSettingsStore {
 
     /** 持久化闹钟优先开关，并返回最新快照。 */
     fun setAlarmFirstEnabled(enabled: Boolean): AppSettings
+
+    /** 持久化液态玻璃开关，并返回最新快照。 */
+    fun setLiquidGlassEnabled(enabled: Boolean): AppSettings
+
+    /** 持久化真实折射开关，并返回最新快照。 */
+    fun setLiquidGlassRefractionEnabled(enabled: Boolean): AppSettings
+
+    /** 持久化液态玻璃模糊半径（0–20），并返回最新快照。 */
+    fun setLiquidGlassBlurRadius(radius: Int): AppSettings
 }
 
 /**
@@ -123,6 +146,42 @@ object SystemUiAppSettingsSync {
                     "readBack=$readBack",
         )
     }
+
+    /** 将"液态玻璃"开关同步到跨进程偏好，供 SystemUI 内置面板读取。 */
+    fun persistLiquidGlassEnabled(context: Context, enabled: Boolean) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putBoolean(AppSettingsKeys.LIQUID_GLASS, enabled)
+        }
+        AppLog.info(
+            "Persisted liquid glass setting enabled=$enabled " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
+
+    /** 将"真实折射"开关同步到跨进程偏好，供 SystemUI 内置面板读取。 */
+    fun persistLiquidGlassRefractionEnabled(context: Context, enabled: Boolean) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putBoolean(AppSettingsKeys.LIQUID_GLASS_REFRACTION, enabled)
+        }
+        AppLog.info(
+            "Persisted liquid glass refraction setting enabled=$enabled " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
+
+    /** 将液态玻璃模糊半径同步到跨进程偏好，供 SystemUI 内置面板读取。 */
+    fun persistLiquidGlassBlurRadius(context: Context, radius: Int) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putInt(AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS, radius)
+        }
+        AppLog.info(
+            "Persisted liquid glass blur radius radius=$radius " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
 }
 
 /** 使用应用独立 SharedPreferences 文件保存设置。 */
@@ -132,6 +191,9 @@ class SharedPreferencesAppSettingsStore(
     private val hideSystemAppsMirror: ((Boolean) -> Unit)? = null,
     private val alarmFirstMirror: ((Boolean) -> Unit)? = null,
     private val volumePercentMirror: ((Boolean) -> Unit)? = null,
+    private val liquidGlassMirror: ((Boolean) -> Unit)? = null,
+    private val liquidGlassRefractionMirror: ((Boolean) -> Unit)? = null,
+    private val liquidGlassBlurRadiusMirror: ((Int) -> Unit)? = null,
 ) : AppSettingsStore {
     override fun read(): AppSettings = logged("read app settings") {
         AppSettings(
@@ -154,6 +216,18 @@ class SharedPreferencesAppSettingsStore(
             alarmFirstEnabled = preferences.getBoolean(
                 AppSettingsKeys.ALARM_FIRST,
                 AppSettingsDefaults.ALARM_FIRST_ENABLED,
+            ),
+            liquidGlassEnabled = preferences.getBoolean(
+                AppSettingsKeys.LIQUID_GLASS,
+                AppSettingsDefaults.LIQUID_GLASS_ENABLED,
+            ),
+            liquidGlassRefractionEnabled = preferences.getBoolean(
+                AppSettingsKeys.LIQUID_GLASS_REFRACTION,
+                AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED,
+            ),
+            liquidGlassBlurRadius = preferences.getInt(
+                AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS,
+                AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS,
             ),
         )
     }
@@ -229,9 +303,72 @@ class SharedPreferencesAppSettingsStore(
         return updated
     }
 
+    override fun setLiquidGlassEnabled(enabled: Boolean): AppSettings {
+        val previous = read().liquidGlassEnabled
+        val updated = write(AppSettingsKeys.LIQUID_GLASS, enabled)
+        try {
+            liquidGlassMirror?.invoke(enabled)
+        } catch (error: RuntimeException) {
+            try {
+                write(AppSettingsKeys.LIQUID_GLASS, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror liquid glass setting", error)
+            throw error
+        }
+        return updated
+    }
+
+    override fun setLiquidGlassRefractionEnabled(enabled: Boolean): AppSettings {
+        val previous = read().liquidGlassRefractionEnabled
+        val updated = write(AppSettingsKeys.LIQUID_GLASS_REFRACTION, enabled)
+        try {
+            liquidGlassRefractionMirror?.invoke(enabled)
+        } catch (error: RuntimeException) {
+            try {
+                write(AppSettingsKeys.LIQUID_GLASS_REFRACTION, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror liquid glass refraction setting", error)
+            throw error
+        }
+        return updated
+    }
+
+    override fun setLiquidGlassBlurRadius(radius: Int): AppSettings {
+        val clamped = radius.coerceIn(
+            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN,
+            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX,
+        )
+        val previous = read().liquidGlassBlurRadius
+        val updated = writeInt(AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS, clamped)
+        try {
+            liquidGlassBlurRadiusMirror?.invoke(clamped)
+        } catch (error: RuntimeException) {
+            try {
+                writeInt(AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror liquid glass blur radius", error)
+            throw error
+        }
+        return updated
+    }
+
     private fun write(key: String, enabled: Boolean): AppSettings =
         logged("write app setting key=$key") {
             check(preferences.edit().putBoolean(key, enabled).commit()) {
+                "SharedPreferences commit failed for key=$key"
+            }
+            read()
+        }
+
+    private fun writeInt(key: String, value: Int): AppSettings =
+        logged("write app setting key=$key") {
+            check(preferences.edit().putInt(key, value).commit()) {
                 "SharedPreferences commit failed for key=$key"
             }
             read()

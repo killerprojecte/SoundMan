@@ -36,6 +36,9 @@ class SystemUiVolumeEntryRuntime(
     private val builtinPanelEnabled: () -> Boolean = { false },
     private val hideSystemAppsEnabled: () -> Boolean = { false },
     private val volumePercentEnabled: () -> Boolean = { false },
+    private val liquidGlassEnabled: () -> Boolean = { false },
+    private val liquidGlassRefractionEnabled: () -> Boolean = { false },
+    private val liquidGlassBlurRadius: () -> Int = { 20 },
 ) {
     private val officialDismissHook = SystemUiOfficialDismissHookBridge(log)
     private val builtinPanel = SystemUiBuiltinVolumePanel(
@@ -44,6 +47,9 @@ class SystemUiVolumeEntryRuntime(
         rescheduleOfficialTimeout = officialDismissHook::rescheduleTimeout,
         hideSystemAppsEnabled = hideSystemAppsEnabled,
         volumePercentEnabled = volumePercentEnabled,
+        liquidGlassEnabled = liquidGlassEnabled,
+        liquidGlassRefractionEnabled = liquidGlassRefractionEnabled,
+        liquidGlassBlurRadius = liquidGlassBlurRadius,
     )
     private val trackedEntries = ArrayList<TrackedEntry>()
     private val pendingInsertions = ArrayList<PendingInsertion>()

@@ -15,6 +15,8 @@ class AppSettingsContractTest {
         assertFalse(settings.systemUiBuiltinVolumePanelEnabled)
         assertFalse(settings.hideSystemAppsEnabled)
         assertFalse(settings.alarmFirstEnabled)
+        assertFalse(settings.liquidGlassEnabled)
+        assertFalse(settings.liquidGlassRefractionEnabled)
         assertEquals(AppSettingsDefaults.SMOOTH_CORNERS_ENABLED, settings.smoothCornersEnabled)
         assertEquals(AppSettingsDefaults.VOLUME_PERCENT_ENABLED, settings.volumePercentEnabled)
         assertEquals(
@@ -29,6 +31,21 @@ class AppSettingsContractTest {
             AppSettingsDefaults.ALARM_FIRST_ENABLED,
             settings.alarmFirstEnabled,
         )
+        assertEquals(
+            AppSettingsDefaults.LIQUID_GLASS_ENABLED,
+            settings.liquidGlassEnabled,
+        )
+        assertEquals(
+            AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED,
+            settings.liquidGlassRefractionEnabled,
+        )
+        assertEquals(20, settings.liquidGlassBlurRadius)
+        assertEquals(
+            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS,
+            settings.liquidGlassBlurRadius,
+        )
+        assertEquals(0, AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN)
+        assertEquals(20, AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX)
     }
 
     @Test
@@ -40,10 +57,13 @@ class AppSettingsContractTest {
                 "system_ui_builtin_volume_panel_enabled",
                 "hide_system_apps_enabled",
                 "alarm_first_enabled",
+                "liquid_glass_enabled",
+                "liquid_glass_refraction_enabled",
+                "liquid_glass_blur_radius",
             ),
             AppSettingsKeys.all,
         )
-        assertEquals(5, AppSettingsKeys.all.size)
+        assertEquals(8, AppSettingsKeys.all.size)
         assertNotEquals(AppSettingsKeys.SMOOTH_CORNERS, AppSettingsKeys.VOLUME_PERCENT)
         assertNotEquals(
             AppSettingsKeys.VOLUME_PERCENT,
@@ -56,6 +76,18 @@ class AppSettingsContractTest {
         assertNotEquals(
             AppSettingsKeys.HIDE_SYSTEM_APPS,
             AppSettingsKeys.ALARM_FIRST
+        )
+        assertNotEquals(
+            AppSettingsKeys.ALARM_FIRST,
+            AppSettingsKeys.LIQUID_GLASS
+        )
+        assertNotEquals(
+            AppSettingsKeys.LIQUID_GLASS,
+            AppSettingsKeys.LIQUID_GLASS_REFRACTION
+        )
+        assertNotEquals(
+            AppSettingsKeys.LIQUID_GLASS_REFRACTION,
+            AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS
         )
     }
 }

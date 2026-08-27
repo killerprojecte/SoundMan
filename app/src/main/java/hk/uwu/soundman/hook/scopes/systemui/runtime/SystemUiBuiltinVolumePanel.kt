@@ -16,6 +16,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
@@ -48,6 +49,7 @@ import hk.uwu.soundman.data.PanelPlaybackSnapshot
 import hk.uwu.soundman.data.PanelPlaybackStatus
 import hk.uwu.soundman.data.ProviderPanelPlayback
 import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialExpandedMaterial
+import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialExpandedMaterialMode
 import hk.uwu.soundman.hook.scopes.systemui.runtime.SystemUiBuiltinVolumePanel.Companion.MORE_BUTTON_COLOR_NAMES
 import hk.uwu.soundman.model.AudioOutputDevice
 import hk.uwu.soundman.model.OutputDeviceType
@@ -72,6 +74,9 @@ class SystemUiBuiltinVolumePanel(
     private val rescheduleOfficialTimeout: () -> Boolean,
     private val hideSystemAppsEnabled: () -> Boolean = { false },
     private val volumePercentEnabled: () -> Boolean = { false },
+    private val liquidGlassEnabled: () -> Boolean = { false },
+    private val liquidGlassRefractionEnabled: () -> Boolean = { false },
+    private val liquidGlassBlurRadius: () -> Int = { 20 },
 ) {
     fun closeFor(sourceView: View) {
         try {
@@ -133,6 +138,9 @@ class SystemUiBuiltinVolumePanel(
                 rescheduleOfficialTimeout = rescheduleOfficialTimeout,
                 hideSystemAppsEnabled = hideSystemAppsEnabled,
                 volumePercentEnabled = volumePercentEnabled,
+                liquidGlassEnabled = liquidGlassEnabled,
+                liquidGlassRefractionEnabled = liquidGlassRefractionEnabled,
+                liquidGlassBlurRadius = liquidGlassBlurRadius,
                 onClosed = { closedSession ->
                     synchronized(sessions) {
                         if (sessions[dialog] === closedSession) sessions.remove(dialog)
@@ -182,6 +190,9 @@ class SystemUiBuiltinVolumePanel(
         private val rescheduleOfficialTimeout: () -> Boolean,
         private val hideSystemAppsEnabled: () -> Boolean,
         private val volumePercentEnabled: () -> Boolean,
+        private val liquidGlassEnabled: () -> Boolean,
+        private val liquidGlassRefractionEnabled: () -> Boolean,
+        private val liquidGlassBlurRadius: () -> Int,
         private val onClosed: (Session) -> Unit,
     ) {
         private val closed = AtomicBoolean(false)
@@ -217,6 +228,8 @@ class SystemUiBuiltinVolumePanel(
         private lateinit var foldedRect: SystemUiPanelRect
         private lateinit var pluginClassLoader: ClassLoader
         private lateinit var expandedMaterial: OfficialExpandedMaterial
+        private var liquidGlass: LiquidGlassPanelDrawable? = null
+        private var panelOutlineRadius = 0
         private val touchInsets = OfficialTouchInsetsRegistration(dialog, log)
         private var morphAnimator: ValueAnimator? = null
         private var resizeAnimator: ValueAnimator? = null
@@ -279,12 +292,12 @@ class SystemUiBuiltinVolumePanel(
             expandedMaterial = OfficialExpandedMaterial(pluginClassLoader, targetContext, log)
             host = buildFullWindowHost()
             panel = buildPanel()
-            expandedMaterial.applyOutline(panel)
+            panelOutlineRadius = expandedMaterial.applyOutline(panel)
             panel.alpha = 0f
             panel.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(v: View) {
                     try {
-                        expandedMaterial.apply(panel)
+                        attachLiquidGlass(expandedMaterial.apply(panel))
                     } catch (throwable: Throwable) {
                         log(
                             Log.ERROR,
@@ -2462,6 +2475,61 @@ class SystemUiBuiltinVolumePanel(
             }
         }
 
+        /**
+         * 官方材质就位后按需叠加液态玻璃层。
+         *
+         * 官方背景（THEME_BLUR 的 MiBlur 视图模糊 / STATIC 的展开背景图）保持在下层：
+         * 折射层不透明时视觉上替换官方模糊，捕获失败则整层不绘制、露出官方模糊兜底；
+         * 官方留有 background drawable 时（STATIC 等）用 LayerDrawable 叠加而不覆盖。
+         * 每次打开面板都重新读一次设置（含模糊半径），面板生命周期内不热更。
+         */
+        private fun attachLiquidGlass(mode: OfficialExpandedMaterial.Mode) {
+            try {
+                val glassEnabled = liquidGlassEnabled()
+                val materialMode = OfficialExpandedMaterialMode.valueOf(mode.name)
+                if (!LiquidGlassPanelPolicy.shouldAttach(materialMode, glassEnabled)) return
+                val config = LiquidGlassPanelConfig(
+                    enabled = true,
+                    trueRefraction = LiquidGlassPanelPolicy.refractionActive(
+                        glassEnabled,
+                        liquidGlassRefractionEnabled(),
+                    ),
+                    captureBlurRadius = liquidGlassBlurRadius().toFloat().coerceIn(0f, 20f),
+                    blendColor = expandedMaterial.blandColor()
+                        ?: LiquidGlassPanelConfig.BLEND_COLOR,
+                )
+                val glass = LiquidGlassPanelDrawable(
+                    context = targetContext,
+                    host = panel,
+                    initialConfig = config,
+                    initialCornerRadius = panelOutlineRadius.toFloat(),
+                    log = log,
+                )
+                liquidGlass = glass
+                val officialBackground = panel.background
+                panel.background = if (officialBackground != null) {
+                    LayerDrawable(arrayOf(officialBackground, glass))
+                } else {
+                    glass
+                }
+                log(
+                    Log.INFO,
+                    TAG,
+                    "Liquid glass attached mode=$mode refraction=${config.trueRefraction} " +
+                            "blurRadius=${config.captureBlurRadius}",
+                    null,
+                )
+            } catch (throwable: Throwable) {
+                liquidGlass = null
+                log(
+                    Log.ERROR,
+                    TAG,
+                    "Liquid glass attach failed; keeping official material only",
+                    throwable,
+                )
+            }
+        }
+
         @SuppressLint("ClickableViewAccessibility")
         private fun cleanupAndComplete(
             reason: String,
@@ -2483,6 +2551,14 @@ class SystemUiBuiltinVolumePanel(
                     morphAnimator?.cancel()
                     resizeAnimator?.cancel()
                     slideAwayAnimator?.cancel()
+                    liquidGlass?.let { glass ->
+                        try {
+                            glass.release()
+                        } catch (throwable: Throwable) {
+                            log(Log.ERROR, TAG, "Liquid glass release failed", throwable)
+                        }
+                    }
+                    liquidGlass = null
                     if (::expandedMaterial.isInitialized) expandedMaterial.clear(panel)
                     panel.removeAllViews()
                     panel.background = null
