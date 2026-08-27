@@ -86,15 +86,13 @@ import hk.uwu.soundman.model.AdjustableApp
 import hk.uwu.soundman.model.AppAudioRule
 import hk.uwu.soundman.model.OutputDeviceType
 import hk.uwu.soundman.model.OutputTarget
+import hk.uwu.soundman.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val SOURCE_STATE_LOG_INTERVAL_MILLIS = 2_000L
-private val Accent = Color(0xFF3482FF)
-private val SecondaryText = Color(0xFF66666D)
-private val PrimaryText = Color(0xFF202024)
 private val OnBlurText = Color.White.copy(alpha = 0.88f)
 private val OnBlurMuted = Color.White.copy(alpha = 0.55f)
 private val HyperOsEasing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)
@@ -210,7 +208,7 @@ fun SoundPanel(
         installedAppsAccess.isRuntimePermissionPresent() &&
         !hasInstalledAppsAccess
 
-    MiuixTheme {
+    AppTheme {
         BlurMaterialHost(
             smoothCornersEnabled = appSettings.smoothCornersEnabled,
             modifier = Modifier.fillMaxSize(),
@@ -509,7 +507,11 @@ private fun CorruptedRuleRow(app: AdjustableApp, modifier: Modifier = Modifier) 
         Column {
             Text(app.label, fontWeight = FontWeight.Bold, color = Color(0xFF8C1D18))
             Text(stringResource(R.string.rule_corrupted_title), fontSize = 12.sp, color = Color(0xFF8C1D18))
-            Text(stringResource(R.string.rule_corrupted_message), fontSize = 11.sp, color = SecondaryText)
+            Text(
+                stringResource(R.string.rule_corrupted_message),
+                fontSize = 11.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
         }
     }
 }
@@ -657,7 +659,7 @@ private fun DeviceRow(
     }
     val targetIcon = when {
         !enabled -> Color.White.copy(alpha = 0.45f)
-        selected -> Accent
+        selected -> MiuixTheme.colorScheme.primary
         else -> Color.White
     }
     val container by animateColorAsState(if (selected) selectedBg else idleBg, colorSpec, label = "deviceBg")
@@ -763,8 +765,12 @@ private fun PreferencesUnavailable(message: String) {
     ) {
         Text(stringResource(R.string.rule_storage_unavailable_title), fontWeight = FontWeight.Bold, color = Color(0xFFB3261E))
         Spacer(Modifier.height(6.dp))
-        Text(message, fontSize = 12.sp, color = SecondaryText)
+        Text(message, fontSize = 12.sp, color = OnBlurMuted)
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.rule_storage_no_fallback), fontSize = 11.sp, color = SecondaryText)
+        Text(
+            stringResource(R.string.rule_storage_no_fallback),
+            fontSize = 11.sp,
+            color = OnBlurMuted
+        )
     }
 }

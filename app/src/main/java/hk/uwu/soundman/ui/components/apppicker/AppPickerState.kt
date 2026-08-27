@@ -3,7 +3,6 @@ package hk.uwu.soundman.ui.components.apppicker
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -26,13 +25,13 @@ import kotlinx.coroutines.withContext
  *
  * @param packageName 包名，作为稳定主键
  * @param label 用户可见的应用名称
- * @param icon 应用图标 Drawable
+ * @param applicationInfo 系统应用信息，用于按需异步加载图标
  * @param isSystemApp 是否为系统应用
  */
 data class AppPickerEntry(
     val packageName: String,
     val label: String,
-    val icon: Drawable,
+    val applicationInfo: ApplicationInfo,
     val isSystemApp: Boolean,
 )
 
@@ -141,16 +140,13 @@ class AppPickerState(
         try {
             val apps = withContext(Dispatchers.IO) {
                 val all = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-                    .filter { info ->
-                        // 过滤掉没有启动入口的应用
-                        packageManager.getLaunchIntentForPackage(info.packageName) != null
-                    }
                     .map { info ->
                         AppPickerEntry(
                             packageName = info.packageName,
                             label = info.loadLabel(packageManager).toString(),
-                            icon = info.loadIcon(packageManager),
-                            isSystemApp = info.flags and ApplicationInfo.FLAG_SYSTEM != 0,
+                            applicationInfo = info,
+                            isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+                                    (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0,
                         )
                     }
                     .sortedBy { it.label.lowercase() }

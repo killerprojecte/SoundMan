@@ -51,7 +51,8 @@ import hk.uwu.soundman.ui.basic.overScrollVertical
 import hk.uwu.soundman.ui.components.InfoLine
 import hk.uwu.soundman.ui.components.ModuleInfoCard
 import hk.uwu.soundman.ui.components.ModuleStatusCard
-import hk.uwu.soundman.ui.components.StatusCardPalette
+import hk.uwu.soundman.ui.components.rememberModuleStatusCardPalette
+import hk.uwu.soundman.ui.components.rememberStatusCardPalette
 import hk.uwu.soundman.utils.RootHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -148,22 +149,8 @@ fun HomePage(
     val density = LocalDensity.current
     val topBarHeightDp = with(density) { scrollBehavior.currentHeightPx.toDp() }
 
-    // 状态卡配色：对齐 REAREye，使用硬编码配色
-    val statusPalette = if (isActivated) {
-        StatusCardPalette(
-            container = Color(0xFFDFFAE4),
-            icon = Color(0xFF36D167),
-            title = Color(0xFF1E5A31),
-            summary = Color(0xFF2C7D45),
-        )
-    } else {
-        StatusCardPalette(
-            container = Color(0xFFF8E2E2),
-            icon = Color(0xFFE06767),
-            title = Color(0xFF7A2A2A),
-            summary = Color(0xFF9A4D4D),
-        )
-    }
+    // 状态卡配色：对齐 SukiSU-Ultra 的三层策略（Monet → 暗黑 → 亮色）
+    val statusPalette = rememberModuleStatusCardPalette(activated = isActivated)
 
     val statusTitle = if (isActivated) {
         stringResource(R.string.home_status_working)
@@ -316,11 +303,14 @@ private suspend fun fetchLatestCommitHashFromNetwork(): String? {
  */
 @Composable
 private fun RootWarningCard() {
-    val palette = StatusCardPalette(
-        container = Color(0xFFFDE9E9),
-        icon = Color(0xFFD94B4B),
-        title = Color(0xFF8C1F1F),
-        summary = Color(0xFFA63737),
+    val palette = rememberStatusCardPalette(
+        accent = Color(0xFFD94B4B),
+        darkContainer = Color(0xFF310808),
+        lightContainer = Color(0xFFFDE9E9),
+        darkTitle = Color(0xFFE08080),
+        lightTitle = Color(0xFF8C1F1F),
+        darkSummary = Color(0xFFCC6A6A),
+        lightSummary = Color(0xFFA63737),
     )
     Card(
         modifier = Modifier
@@ -367,11 +357,14 @@ private fun RootWarningCard() {
 @Composable
 private fun UpdateWarningCard(currentHash: String, latestHash: String) {
     val context = LocalContext.current
-    val palette = StatusCardPalette(
-        container = Color(0xFFFFF3CD),
-        icon = Color(0xFFE0A100),
-        title = Color(0xFF7A5A00),
-        summary = Color(0xFF8A6B00),
+    val palette = rememberStatusCardPalette(
+        accent = Color(0xFFE0A100),
+        darkContainer = Color(0xFF332808),
+        lightContainer = Color(0xFFFFF3CD),
+        darkTitle = Color(0xFFE8C87A),
+        lightTitle = Color(0xFF7A5A00),
+        darkSummary = Color(0xFFD4B264),
+        lightSummary = Color(0xFF8A6B00),
     )
     Card(
         modifier = Modifier
@@ -472,11 +465,14 @@ private fun UpdateInfoCard(
 @Composable
 private fun StarCard(onDismissed: () -> Unit) {
     val context = LocalContext.current
-    val palette = StatusCardPalette(
-        container = Color(0xFFFFF8E1),
-        icon = Color(0xFFF5A623),
-        title = Color(0xFF7A5A00),
-        summary = Color(0xFF8A6B00),
+    val palette = rememberStatusCardPalette(
+        accent = Color(0xFFF5A623),
+        darkContainer = Color(0xFF332B08),
+        lightContainer = Color(0xFFFFF8E1),
+        darkTitle = Color(0xFFE8C87A),
+        lightTitle = Color(0xFF7A5A00),
+        darkSummary = Color(0xFFD4B264),
+        lightSummary = Color(0xFF8A6B00),
     )
     Card(
         modifier = Modifier

@@ -1,5 +1,11 @@
 package hk.uwu.soundman.ui.components.apppicker
 
+import android.annotation.SuppressLint
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,22 +24,27 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.core.graphics.createBitmap
 import hk.uwu.soundman.miuix.basic.SInputField
 import hk.uwu.soundman.ui.basic.OverScrollState
 import hk.uwu.soundman.ui.basic.overScrollVertical
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.Text
@@ -123,6 +134,7 @@ private fun AppList(
     val apps = state.filteredApps
     val overScrollState = remember { OverScrollState() }
     val hapticFeedback = LocalHapticFeedback.current
+    val packageManager = LocalContext.current.packageManager
 
     // 监听过度滚动偏移，超过阈值时触发刷新
     LaunchedEffect(overScrollState) {
@@ -151,6 +163,7 @@ private fun AppList(
                 isSelected = state.isSelected(entry.packageName),
                 onToggle = { state.toggleSelection(entry.packageName) },
                 systemAppLabel = strings.systemAppLabel,
+                packageManager = packageManager,
             )
         }
     }
@@ -159,7 +172,7 @@ private fun AppList(
 /**
  * 单个应用行：使用 [BasicComponent] + 应用图标 + 末尾 [Checkbox]。
  *
- * 左侧为应用图标（参照 REAREye 的 PackageSelectionItem 布局），
+ * 左侧为应用图标（异步加载，加载完成前显示占位），
  * 标题显示应用名称，摘要显示包名和系统应用标签，末尾为复选框。
  */
 @Composable
@@ -168,11 +181,9 @@ private fun AppRow(
     isSelected: Boolean,
     onToggle: () -> Unit,
     systemAppLabel: String,
+    packageManager: PackageManager,
 ) {
-    // 应用图标 — 加载高分辨率以适配大尺寸显示
-    val iconBitmap = remember(entry.packageName, entry.icon) {
-        entry.icon.toBitmap(128, 128).asImageBitmap()
-    }
+    val iconBitmap = rememberAppIcon(packageManager, entry.applicationInfo)
 
     val summary = if (entry.isSystemApp) {
         "${entry.packageName}  ·  $systemAppLabel"
@@ -184,13 +195,21 @@ private fun AppRow(
         title = entry.label,
         summary = summary,
         startAction = {
-            Image(
-                bitmap = iconBitmap,
-                contentDescription = entry.label,
-                modifier = Modifier
-                    .size(56.dp)
-                    .padding(end = 12.dp),
-            )
+            if (iconBitmap != null) {
+                Image(
+                    bitmap = iconBitmap,
+                    contentDescription = entry.label,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .padding(end = 12.dp),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .padding(end = 12.dp),
+                )
+            }
         },
         endActions = {
             Checkbox(
@@ -256,11 +275,68 @@ private fun EmptyState(text: String) {
     }
 }
 
+// === 图标异步加载 ===
+
+/**
+ * 应用图标 LruCache，避免滚动时重复加载。
+ */
+private object AppIconCache {
+    private val cache = LruCache<String, ImageBitmap>(96)
+    fun get(packageName: String): ImageBitmap? = cache.get(packageName)
+    fun put(packageName: String, bitmap: ImageBitmap) = cache.put(packageName, bitmap)
+}
+
+/**
+ * 异步加载应用图标，带 LruCache 缓存。
+ *
+ * 首次调用时在 [Dispatchers.IO] 中从 [ApplicationInfo] 加载图标并转为 [ImageBitmap]，
+ * 后续调用直接从缓存返回。图标加载完成后自动触发 recomposition。
+ *
+ * @param packageManager PackageManager 实例
+ * @param applicationInfo 应用信息
+ * @return 图标 ImageBitmap，加载完成前为 null
+ */
+@Composable
+private fun rememberAppIcon(
+    packageManager: PackageManager,
+    applicationInfo: ApplicationInfo,
+): ImageBitmap? {
+    val packageName = applicationInfo.packageName
+    val bitmap by produceState(
+        initialValue = AppIconCache.get(packageName),
+        key1 = packageName,
+    ) {
+        if (value != null) return@produceState
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val drawable = applicationInfo.loadIcon(packageManager)
+                if (drawable is BitmapDrawable && drawable.bitmap != null) {
+                    drawable.bitmap.asImageBitmap()
+                } else {
+                    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1
+                    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1
+                    val createdBitmap = createBitmap(width, height)
+                    val canvas = Canvas(createdBitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    createdBitmap.asImageBitmap()
+                }
+            }.getOrNull()
+        }
+        if (loaded != null) {
+            AppIconCache.put(packageName, loaded)
+            value = loaded
+        }
+    }
+    return bitmap
+}
+
 // === 辅助函数 ===
 
 /**
  * collectAsState 的封装。
  */
+@SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateLifecycleAware(): androidx.compose.runtime.State<T> {
     return this.collectAsState(initial = value)

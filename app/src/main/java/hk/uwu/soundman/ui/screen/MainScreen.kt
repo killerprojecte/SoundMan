@@ -64,6 +64,7 @@ import hk.uwu.soundman.ui.components.LiquidBottomTabs
 import hk.uwu.soundman.ui.components.LiquidGlassDropdownMenu
 import hk.uwu.soundman.ui.components.LiquidGlassDropdownMenuItem
 import hk.uwu.soundman.ui.components.LiquidTopBarButton
+import hk.uwu.soundman.ui.theme.AppTheme
 import hk.uwu.soundman.utils.RootHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,7 +99,7 @@ fun MainScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    MiuixTheme {
+    AppTheme {
         CompositionLocalProvider(LocalOverScrollState provides overScrollState) {
             val liquidGlassBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
             // About 根页也参与同一 backdrop 采样；只有 About 子页隐藏导航栏。
