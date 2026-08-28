@@ -40,6 +40,7 @@ import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.AppSettingsDefaults
 import hk.uwu.soundman.data.AppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
+import hk.uwu.soundman.miuix.basic.NativeMiuixTextField
 import hk.uwu.soundman.miuix.basic.SColorPicker
 import hk.uwu.soundman.miuix.basic.STextButton
 import hk.uwu.soundman.miuix.overlay.SOverlayDialog
@@ -253,6 +254,9 @@ fun SettingsPage(
 
     if (showBlendColorPicker) {
         var draftBlendColor by remember { mutableStateOf(Color(settings.liquidGlassBlendColor)) }
+        var blendColorHex by remember(draftBlendColor) {
+            mutableStateOf("%08X".format(draftBlendColor.toArgb()))
+        }
         SOverlayDialog(
             show = true,
             title = stringResource(R.string.settings_liquid_glass_blend_color),
@@ -267,6 +271,26 @@ fun SettingsPage(
                 SColorPicker(
                     color = draftBlendColor,
                     onColorChanged = { draftBlendColor = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                NativeMiuixTextField(
+                    value = blendColorHex,
+                    onValueChange = { newHex ->
+                        if (newHex.length <= 8 &&
+                            newHex.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                        ) {
+                            val upperHex = newHex.uppercase()
+                            val newColor = if (upperHex.length == 8) {
+                                Color(upperHex.toUInt(16).toInt())
+                            } else {
+                                null
+                            }
+                            blendColorHex = upperHex
+                            if (newColor != null) draftBlendColor = newColor
+                        }
+                    },
+                    label = stringResource(R.string.settings_liquid_glass_blend_color_hex),
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
