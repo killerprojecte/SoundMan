@@ -29,6 +29,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -40,7 +41,6 @@ import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.AppSettingsDefaults
 import hk.uwu.soundman.data.AppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
-import hk.uwu.soundman.miuix.basic.NativeMiuixTextField
 import hk.uwu.soundman.miuix.basic.SColorPicker
 import hk.uwu.soundman.miuix.basic.STextButton
 import hk.uwu.soundman.miuix.overlay.SOverlayDialog
@@ -55,6 +55,7 @@ import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
@@ -273,7 +274,7 @@ fun SettingsPage(
                     onColorChanged = { draftBlendColor = it },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                NativeMiuixTextField(
+                TextField(
                     value = blendColorHex,
                     onValueChange = { newHex ->
                         if (newHex.length <= 8 &&
@@ -289,7 +290,13 @@ fun SettingsPage(
                             if (newColor != null) draftBlendColor = newColor
                         }
                     },
-                    label = stringResource(R.string.settings_liquid_glass_blend_color_hex),
+                    leadingIcon = {
+                        Text(
+                            text = stringResource(R.string.settings_liquid_glass_blend_color_hex) + ": #",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(start = 16.dp),
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
