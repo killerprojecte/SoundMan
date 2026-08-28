@@ -47,13 +47,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent?.action == ACTION_OPEN_OVERLAY) {
+        val overlayLaunch = intent?.action == ACTION_OPEN_OVERLAY
+        if (overlayLaunch) {
             setTheme(R.style.Theme_SoundMan_Overlay)
         }
         super.onCreate(savedInstanceState)
         splashScreen.setOnExitAnimationListener { it.remove() }
-        window.setBackgroundDrawableResource(android.R.color.transparent)
-        if (intent?.action == ACTION_OPEN_OVERLAY) {
+        if (overlayLaunch) {
+            // 悬浮窗跳板保持全透明；主页必须保持不透明窗口，否则输入法弹出时会异常顶起界面。
+            window.setBackgroundDrawableResource(android.R.color.transparent)
             finishAfterOverlay = true
             requestOverlay()
             return
