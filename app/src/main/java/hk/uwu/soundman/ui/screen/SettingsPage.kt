@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -35,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.kyant.backdrop.Backdrop
 import hk.uwu.soundman.R
 import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.AppSettingsDefaults
@@ -43,7 +44,6 @@ import hk.uwu.soundman.data.AppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
 import hk.uwu.soundman.miuix.basic.SColorPicker
 import hk.uwu.soundman.miuix.basic.STextButton
-import hk.uwu.soundman.miuix.overlay.SOverlayDialog
 import hk.uwu.soundman.ui.basic.SharedScrollBehavior
 import hk.uwu.soundman.ui.basic.overScrollVertical
 import hk.uwu.soundman.ui.components.SettingColorItem
@@ -56,7 +56,9 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
@@ -69,7 +71,6 @@ fun SettingsPage(
     paddingValues: PaddingValues,
     scrollBehavior: SharedScrollBehavior,
     settingsStore: AppSettingsStore,
-    liquidGlassBackdrop: Backdrop? = null,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
@@ -258,17 +259,24 @@ fun SettingsPage(
         var blendColorHex by remember(draftBlendColor) {
             mutableStateOf("%08X".format(draftBlendColor.toArgb()))
         }
-        SOverlayDialog(
+        OverlayBottomSheet(
             show = true,
             title = stringResource(R.string.settings_liquid_glass_blend_color),
-            summary = stringResource(R.string.settings_liquid_glass_blend_color_summary),
-            liquidGlassBackdrop = liquidGlassBackdrop,
             onDismissRequest = { showBlendColorPicker = false },
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                Text(
+                    text = stringResource(R.string.settings_liquid_glass_blend_color_summary),
+                    fontSize = MiuixTheme.textStyles.body1.fontSize,
+                    color = MiuixTheme.colorScheme.onSurfaceSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 SColorPicker(
                     color = draftBlendColor,
                     onColorChanged = { draftBlendColor = it },
