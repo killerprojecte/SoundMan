@@ -23,6 +23,10 @@
     <string name="settings_liquid_glass_summary">Layer glass rim light and dispersion over the built-in panel background blur</string>
     <string name="settings_liquid_glass_blur_radius">Background blur</string>
     <string name="settings_liquid_glass_blur_radius_summary">Blur radius of the refracted background (0–20); lower is sharper. Applies only while true refraction is on</string>
+    <string name="settings_liquid_glass_blend_color">Blend color</string>
+    <string name="settings_liquid_glass_blend_color_summary">Tint the refracted background with the picked color. Applies only while true refraction is on</string>
+    <string name="settings_liquid_glass_blend_color_reset">Reset to default</string>
+    <string name="settings_liquid_glass_blend_color_done">Done</string>
     <string name="settings_liquid_glass_refraction">True refraction</string>
     <string name="settings_liquid_glass_refraction_summary">Refract the live content behind the panel in real time; requires liquid glass</string>
     <string name="home_github" translatable="false">GitHub</string>

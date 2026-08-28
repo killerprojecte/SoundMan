@@ -90,6 +90,9 @@ class MainActivity : ComponentActivity() {
             liquidGlassBlurRadiusMirror = { radius ->
                 SystemUiAppSettingsSync.persistLiquidGlassBlurRadius(this, radius)
             },
+            liquidGlassBlendColorMirror = { color ->
+                SystemUiAppSettingsSync.persistLiquidGlassBlendColor(this, color)
+            },
         )
         try {
             SystemUiAppSettingsSync.persistBuiltinPanelEnabled(
@@ -165,6 +168,17 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize liquid glass blur radius during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassBlendColor(
+                this,
+                settingsStore.read().liquidGlassBlendColor,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass blend color during startup",
                 error
             )
         }

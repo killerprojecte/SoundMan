@@ -108,13 +108,6 @@ class OfficialExpandedMaterial(
         view.background = null
     }
 
-    /**
-     * 官方展开背景的混合色 `MiuiVolumeDialogRes.getBgBlandColor(true)`，
-     * 供液态玻璃层与官方材质保持同一色调；探测失败返回 null 由调用方用默认值。
-     */
-    fun blandColor(): Int? =
-        invokeRequired(RES, "getBgBlandColor", true, quiet = true).takeUnless { it === FAILED } as? Int
-
     /** OS4 `Util.isAdvancedMaterialEffective`；OS3 无此方法，按 false 处理。 */
     private fun isAdvancedMaterialEffective(): Boolean =
         invokeRequired(UTIL, "isAdvancedMaterialEffective", context, quiet = true) as? Boolean ?: false

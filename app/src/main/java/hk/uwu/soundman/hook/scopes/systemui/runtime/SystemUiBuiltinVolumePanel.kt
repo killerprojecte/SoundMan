@@ -77,6 +77,7 @@ class SystemUiBuiltinVolumePanel(
     private val liquidGlassEnabled: () -> Boolean = { false },
     private val liquidGlassRefractionEnabled: () -> Boolean = { false },
     private val liquidGlassBlurRadius: () -> Int = { 20 },
+    private val liquidGlassBlendColor: () -> Int = { 0x20FFFFFF },
 ) {
     fun closeFor(sourceView: View) {
         try {
@@ -141,6 +142,7 @@ class SystemUiBuiltinVolumePanel(
                 liquidGlassEnabled = liquidGlassEnabled,
                 liquidGlassRefractionEnabled = liquidGlassRefractionEnabled,
                 liquidGlassBlurRadius = liquidGlassBlurRadius,
+                liquidGlassBlendColor = liquidGlassBlendColor,
                 onClosed = { closedSession ->
                     synchronized(sessions) {
                         if (sessions[dialog] === closedSession) sessions.remove(dialog)
@@ -193,6 +195,7 @@ class SystemUiBuiltinVolumePanel(
         private val liquidGlassEnabled: () -> Boolean,
         private val liquidGlassRefractionEnabled: () -> Boolean,
         private val liquidGlassBlurRadius: () -> Int,
+        private val liquidGlassBlendColor: () -> Int,
         private val onClosed: (Session) -> Unit,
     ) {
         private val closed = AtomicBoolean(false)
@@ -2481,7 +2484,7 @@ class SystemUiBuiltinVolumePanel(
          * 官方背景（THEME_BLUR 的 MiBlur 视图模糊 / STATIC 的展开背景图）保持在下层：
          * 折射层不透明时视觉上替换官方模糊，捕获失败则整层不绘制、露出官方模糊兜底；
          * 官方留有 background drawable 时（STATIC 等）用 LayerDrawable 叠加而不覆盖。
-         * 每次打开面板都重新读一次设置（含模糊半径），面板生命周期内不热更。
+         * 每次打开面板都重新读一次设置（含模糊半径与混色颜色），面板生命周期内不热更。
          */
         private fun attachLiquidGlass(mode: OfficialExpandedMaterial.Mode) {
             try {
@@ -2495,8 +2498,7 @@ class SystemUiBuiltinVolumePanel(
                         liquidGlassRefractionEnabled(),
                     ),
                     captureBlurRadius = liquidGlassBlurRadius().toFloat().coerceIn(0f, 20f),
-                    blendColor = expandedMaterial.blandColor()
-                        ?: LiquidGlassPanelConfig.BLEND_COLOR,
+                    blendColor = liquidGlassBlendColor(),
                 )
                 val glass = LiquidGlassPanelDrawable(
                     context = targetContext,
@@ -2516,7 +2518,8 @@ class SystemUiBuiltinVolumePanel(
                     Log.INFO,
                     TAG,
                     "Liquid glass attached mode=$mode refraction=${config.trueRefraction} " +
-                            "blurRadius=${config.captureBlurRadius}",
+                            "blurRadius=${config.captureBlurRadius} " +
+                            "blendColor=0x${Integer.toHexString(config.blendColor)}",
                     null,
                 )
             } catch (throwable: Throwable) {

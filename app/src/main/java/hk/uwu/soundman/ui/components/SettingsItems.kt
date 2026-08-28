@@ -1,17 +1,25 @@
 package hk.uwu.soundman.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import hk.uwu.soundman.miuix.basic.SSlider
+import hk.uwu.soundman.miuix.basic.sDrawCheckerboard
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Switch
@@ -147,6 +155,60 @@ fun SettingActionItem(
     Card(modifier = modifier.fillMaxWidth()) {
         BasicComponent(
             onClick = onClick,
+            insideMargin = PaddingValues(16.dp),
+        ) {
+            Text(
+                text = title,
+                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurface,
+            )
+            if (summary != null) {
+                Text(
+                    text = summary,
+                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 设置项颜色组件：Card 内嵌 BasicComponent + 当前颜色色块。
+ *
+ * 色块铺在棋盘格底上，半透明颜色也能直观预览；点击整项触发颜色选择器。
+ */
+@Composable
+fun SettingColorItem(
+    title: String,
+    summary: String? = null,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f),
+    ) {
+        BasicComponent(
+            onClick = { if (enabled) onClick() },
+            endActions = {
+                Box(
+                    modifier = Modifier
+                        .size(width = 42.dp, height = 26.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .sDrawCheckerboard()
+                        .background(color)
+                        .border(
+                            width = 0.5.dp,
+                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(13.dp),
+                        ),
+                )
+            },
             insideMargin = PaddingValues(16.dp),
         ) {
             Text(

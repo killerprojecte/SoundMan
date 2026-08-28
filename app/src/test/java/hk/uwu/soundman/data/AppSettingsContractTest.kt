@@ -46,6 +46,11 @@ class AppSettingsContractTest {
         )
         assertEquals(0, AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN)
         assertEquals(20, AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX)
+        assertEquals(
+            AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR,
+            settings.liquidGlassBlendColor,
+        )
+        assertEquals(0x20FFFFFF, AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR)
     }
 
     @Test
@@ -60,10 +65,11 @@ class AppSettingsContractTest {
                 "liquid_glass_enabled",
                 "liquid_glass_refraction_enabled",
                 "liquid_glass_blur_radius",
+                "liquid_glass_blend_color",
             ),
             AppSettingsKeys.all,
         )
-        assertEquals(8, AppSettingsKeys.all.size)
+        assertEquals(9, AppSettingsKeys.all.size)
         assertNotEquals(AppSettingsKeys.SMOOTH_CORNERS, AppSettingsKeys.VOLUME_PERCENT)
         assertNotEquals(
             AppSettingsKeys.VOLUME_PERCENT,
@@ -88,6 +94,10 @@ class AppSettingsContractTest {
         assertNotEquals(
             AppSettingsKeys.LIQUID_GLASS_REFRACTION,
             AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS
+        )
+        assertNotEquals(
+            AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS,
+            AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR
         )
     }
 }

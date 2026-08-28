@@ -32,6 +32,7 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
         liquidGlassEnabled = ::isLiquidGlassEnabled,
         liquidGlassRefractionEnabled = ::isLiquidGlassRefractionEnabled,
         liquidGlassBlurRadius = ::liquidGlassBlurRadius,
+        liquidGlassBlendColor = ::liquidGlassBlendColor,
     )
     private val pluginClassLoaderReader = SystemUiPluginClassLoader()
     private val pluginClassLoaderAttach = SystemUiPluginClassLoaderAttach()
@@ -370,6 +371,27 @@ object SystemUiVolumeEntryHooker : YukiBaseHooker() {
     } catch (error: Throwable) {
         YLog.error("Unable to read liquid glass blur radius through Yuki prefs", error)
         AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS
+    }
+
+    /** 混色颜色跨进程读取：容忍 Int/Long/String 漂移，非法值按默认处理。 */
+    private fun liquidGlassBlendColor(): Int = try {
+        val modulePrefs = prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        val value = modulePrefs.all()[AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR]
+        when (value) {
+            null -> AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR
+            is Int -> value
+            is Long -> value.toInt()
+            is String -> value.toIntOrNull() ?: AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR
+            else -> {
+                YLog.warn(
+                    "Invalid ${AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR} type=${value.javaClass.name}",
+                )
+                AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR
+            }
+        }
+    } catch (error: Throwable) {
+        YLog.error("Unable to read liquid glass blend color through Yuki prefs", error)
+        AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR
     }
 
     private fun writeLog(priority: Int, tag: String, message: String, throwable: Throwable?) {

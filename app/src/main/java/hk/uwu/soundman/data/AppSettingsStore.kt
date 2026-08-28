@@ -18,6 +18,7 @@ data class AppSettings(
     val liquidGlassEnabled: Boolean = AppSettingsDefaults.LIQUID_GLASS_ENABLED,
     val liquidGlassRefractionEnabled: Boolean = AppSettingsDefaults.LIQUID_GLASS_REFRACTION_ENABLED,
     val liquidGlassBlurRadius: Int = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS,
+    val liquidGlassBlendColor: Int = AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR,
 )
 
 /** 设置默认值，供存储实现与纯 JVM 测试共享。 */
@@ -32,6 +33,7 @@ object AppSettingsDefaults {
     const val LIQUID_GLASS_BLUR_RADIUS = 20
     const val LIQUID_GLASS_BLUR_RADIUS_MIN = 0
     const val LIQUID_GLASS_BLUR_RADIUS_MAX = 20
+    const val LIQUID_GLASS_BLEND_COLOR = 0x20FFFFFF
 }
 
 /** SharedPreferences 键名的唯一来源，避免读写两端发生漂移。 */
@@ -44,6 +46,7 @@ object AppSettingsKeys {
     const val LIQUID_GLASS = "liquid_glass_enabled"
     const val LIQUID_GLASS_REFRACTION = "liquid_glass_refraction_enabled"
     const val LIQUID_GLASS_BLUR_RADIUS = "liquid_glass_blur_radius"
+    const val LIQUID_GLASS_BLEND_COLOR = "liquid_glass_blend_color"
 
     val all: Set<String> = setOf(
         SMOOTH_CORNERS,
@@ -54,6 +57,7 @@ object AppSettingsKeys {
         LIQUID_GLASS,
         LIQUID_GLASS_REFRACTION,
         LIQUID_GLASS_BLUR_RADIUS,
+        LIQUID_GLASS_BLEND_COLOR,
     )
 }
 
@@ -89,6 +93,9 @@ interface AppSettingsStore {
 
     /** 持久化液态玻璃模糊半径（0–20），并返回最新快照。 */
     fun setLiquidGlassBlurRadius(radius: Int): AppSettings
+
+    /** 持久化液态玻璃混色颜色（ARGB），并返回最新快照。 */
+    fun setLiquidGlassBlendColor(color: Int): AppSettings
 }
 
 /**
@@ -182,6 +189,18 @@ object SystemUiAppSettingsSync {
                     "available=${crossProcessPreferences.isPreferencesAvailable}",
         )
     }
+
+    /** 将液态玻璃混色颜色（ARGB）同步到跨进程偏好，供 SystemUI 内置面板读取。 */
+    fun persistLiquidGlassBlendColor(context: Context, color: Int) {
+        val crossProcessPreferences = context.prefs(SYSTEM_UI_SETTINGS_PREFERENCES_NAME)
+        crossProcessPreferences.edit {
+            putInt(AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR, color)
+        }
+        AppLog.info(
+            "Persisted liquid glass blend color color=0x${Integer.toHexString(color)} " +
+                    "available=${crossProcessPreferences.isPreferencesAvailable}",
+        )
+    }
 }
 
 /** 使用应用独立 SharedPreferences 文件保存设置。 */
@@ -194,6 +213,7 @@ class SharedPreferencesAppSettingsStore(
     private val liquidGlassMirror: ((Boolean) -> Unit)? = null,
     private val liquidGlassRefractionMirror: ((Boolean) -> Unit)? = null,
     private val liquidGlassBlurRadiusMirror: ((Int) -> Unit)? = null,
+    private val liquidGlassBlendColorMirror: ((Int) -> Unit)? = null,
 ) : AppSettingsStore {
     override fun read(): AppSettings = logged("read app settings") {
         AppSettings(
@@ -228,6 +248,10 @@ class SharedPreferencesAppSettingsStore(
             liquidGlassBlurRadius = preferences.getInt(
                 AppSettingsKeys.LIQUID_GLASS_BLUR_RADIUS,
                 AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS,
+            ),
+            liquidGlassBlendColor = preferences.getInt(
+                AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR,
+                AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR,
             ),
         )
     }
@@ -353,6 +377,23 @@ class SharedPreferencesAppSettingsStore(
                 error.addSuppressed(rollbackError)
             }
             AppLog.error("Unable to mirror liquid glass blur radius", error)
+            throw error
+        }
+        return updated
+    }
+
+    override fun setLiquidGlassBlendColor(color: Int): AppSettings {
+        val previous = read().liquidGlassBlendColor
+        val updated = writeInt(AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR, color)
+        try {
+            liquidGlassBlendColorMirror?.invoke(color)
+        } catch (error: RuntimeException) {
+            try {
+                writeInt(AppSettingsKeys.LIQUID_GLASS_BLEND_COLOR, previous)
+            } catch (rollbackError: RuntimeException) {
+                error.addSuppressed(rollbackError)
+            }
+            AppLog.error("Unable to mirror liquid glass blend color", error)
             throw error
         }
         return updated
