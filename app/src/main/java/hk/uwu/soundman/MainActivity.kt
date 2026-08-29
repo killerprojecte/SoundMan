@@ -47,13 +47,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent?.action == ACTION_OPEN_OVERLAY) {
+        val overlayLaunch = intent?.action == ACTION_OPEN_OVERLAY
+        if (overlayLaunch) {
             setTheme(R.style.Theme_SoundMan_Overlay)
         }
         super.onCreate(savedInstanceState)
         splashScreen.setOnExitAnimationListener { it.remove() }
-        window.setBackgroundDrawableResource(android.R.color.transparent)
-        if (intent?.action == ACTION_OPEN_OVERLAY) {
+        if (overlayLaunch) {
+            // 悬浮窗跳板保持全透明；主页必须保持不透明窗口，否则输入法弹出时会异常顶起界面。
+            window.setBackgroundDrawableResource(android.R.color.transparent)
             finishAfterOverlay = true
             requestOverlay()
             return
@@ -80,6 +82,18 @@ class MainActivity : ComponentActivity() {
             },
             volumePercentMirror = { enabled ->
                 SystemUiAppSettingsSync.persistVolumePercentEnabled(this, enabled)
+            },
+            liquidGlassMirror = { enabled ->
+                SystemUiAppSettingsSync.persistLiquidGlassEnabled(this, enabled)
+            },
+            liquidGlassRefractionMirror = { enabled ->
+                SystemUiAppSettingsSync.persistLiquidGlassRefractionEnabled(this, enabled)
+            },
+            liquidGlassBlurRadiusMirror = { radius ->
+                SystemUiAppSettingsSync.persistLiquidGlassBlurRadius(this, radius)
+            },
+            liquidGlassBlendColorMirror = { color ->
+                SystemUiAppSettingsSync.persistLiquidGlassBlendColor(this, color)
             },
         )
         try {
@@ -123,6 +137,50 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize volume-percent setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassEnabled(
+                this,
+                settingsStore.read().liquidGlassEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassRefractionEnabled(
+                this,
+                settingsStore.read().liquidGlassRefractionEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass refraction setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassBlurRadius(
+                this,
+                settingsStore.read().liquidGlassBlurRadius,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass blur radius during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistLiquidGlassBlendColor(
+                this,
+                settingsStore.read().liquidGlassBlendColor,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize liquid glass blend color during startup",
                 error
             )
         }

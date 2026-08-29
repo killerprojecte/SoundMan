@@ -2,44 +2,63 @@ package hk.uwu.soundman.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.kyant.backdrop.Backdrop
 import hk.uwu.soundman.R
 import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
+import hk.uwu.soundman.data.AppSettingsDefaults
 import hk.uwu.soundman.data.AppSettingsStore
 import hk.uwu.soundman.data.SharedPreferencesAppBlacklistStore
+import hk.uwu.soundman.miuix.basic.SColorPicker
+import hk.uwu.soundman.miuix.basic.STextButton
 import hk.uwu.soundman.ui.basic.SharedScrollBehavior
 import hk.uwu.soundman.ui.basic.overScrollVertical
+import hk.uwu.soundman.ui.components.SettingColorItem
+import hk.uwu.soundman.ui.components.SettingSliderItem
 import hk.uwu.soundman.ui.components.SettingSwitchItem
 import hk.uwu.soundman.ui.components.apppicker.AppPickerBottomSheet
 import hk.uwu.soundman.ui.components.apppicker.AppPickerStrings
+import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
@@ -52,12 +71,12 @@ fun SettingsPage(
     paddingValues: PaddingValues,
     scrollBehavior: SharedScrollBehavior,
     settingsStore: AppSettingsStore,
-    liquidGlassBackdrop: Backdrop? = null,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     var settings by remember(settingsStore) { mutableStateOf(settingsStore.read()) }
     var showBlacklistPicker by remember { mutableStateOf(false) }
+    var showBlendColorPicker by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -130,6 +149,56 @@ fun SettingsPage(
                     },
                 )
             }
+            item(key = "liquid_glass") {
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_liquid_glass),
+                    summary = stringResource(R.string.settings_liquid_glass_summary),
+                    checked = settings.liquidGlassEnabled,
+                    onCheckedChange = { settings = settingsStore.setLiquidGlassEnabled(it) },
+                )
+            }
+            item(key = "liquid_glass_blur_radius") {
+                var draftBlurRadius by remember(settings) {
+                    mutableStateOf(settings.liquidGlassBlurRadius.toFloat())
+                }
+                SettingSliderItem(
+                    title = stringResource(R.string.settings_liquid_glass_blur_radius),
+                    summary = stringResource(R.string.settings_liquid_glass_blur_radius_summary),
+                    value = draftBlurRadius,
+                    valueRange = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN.toFloat()..
+                            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX.toFloat(),
+                    steps = AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MAX -
+                            AppSettingsDefaults.LIQUID_GLASS_BLUR_RADIUS_MIN - 1,
+                    enabled = settings.liquidGlassEnabled && settings.liquidGlassRefractionEnabled,
+                    valueLabel = draftBlurRadius.roundToInt().toString(),
+                    onValueChange = { draftBlurRadius = it },
+                    onValueChangeFinished = {
+                        settings = settingsStore.setLiquidGlassBlurRadius(
+                            draftBlurRadius.roundToInt()
+                        )
+                    },
+                )
+            }
+            item(key = "liquid_glass_blend_color") {
+                SettingColorItem(
+                    title = stringResource(R.string.settings_liquid_glass_blend_color),
+                    summary = stringResource(R.string.settings_liquid_glass_blend_color_summary),
+                    color = Color(settings.liquidGlassBlendColor),
+                    enabled = settings.liquidGlassEnabled && settings.liquidGlassRefractionEnabled,
+                    onClick = { showBlendColorPicker = true },
+                )
+            }
+            item(key = "liquid_glass_refraction") {
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_liquid_glass_refraction),
+                    summary = stringResource(R.string.settings_liquid_glass_refraction_summary),
+                    checked = settings.liquidGlassRefractionEnabled,
+                    enabled = settings.liquidGlassEnabled,
+                    onCheckedChange = {
+                        settings = settingsStore.setLiquidGlassRefractionEnabled(it)
+                    },
+                )
+            }
             item(key = "hide_system_apps") {
                 SettingSwitchItem(
                     title = stringResource(R.string.settings_hide_system_apps),
@@ -183,5 +252,86 @@ fun SettingsPage(
                 showBlacklistPicker = false
             },
         )
+    }
+
+    if (showBlendColorPicker) {
+        var draftBlendColor by remember { mutableStateOf(Color(settings.liquidGlassBlendColor)) }
+        var blendColorHex by remember(draftBlendColor) {
+            mutableStateOf("%08X".format(draftBlendColor.toArgb()))
+        }
+        OverlayBottomSheet(
+            show = true,
+            title = stringResource(R.string.settings_liquid_glass_blend_color),
+            onDismissRequest = { showBlendColorPicker = false },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_liquid_glass_blend_color_summary),
+                    fontSize = MiuixTheme.textStyles.body1.fontSize,
+                    color = MiuixTheme.colorScheme.onSurfaceSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                SColorPicker(
+                    color = draftBlendColor,
+                    onColorChanged = { draftBlendColor = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextField(
+                    value = blendColorHex,
+                    onValueChange = { newHex ->
+                        if (newHex.length <= 8 &&
+                            newHex.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                        ) {
+                            val upperHex = newHex.uppercase()
+                            val newColor = if (upperHex.length == 8) {
+                                Color(upperHex.toUInt(16).toInt())
+                            } else {
+                                null
+                            }
+                            blendColorHex = upperHex
+                            if (newColor != null) draftBlendColor = newColor
+                        }
+                    },
+                    leadingIcon = {
+                        Text(
+                            text = stringResource(R.string.settings_liquid_glass_blend_color_hex) + ": #",
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(start = 16.dp),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    STextButton(
+                        text = stringResource(R.string.settings_liquid_glass_blend_color_reset),
+                        onClick = {
+                            draftBlendColor = Color(AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR)
+                        },
+                    )
+                    Button(
+                        onClick = {
+                            settings = settingsStore.setLiquidGlassBlendColor(
+                                draftBlendColor.toArgb()
+                            )
+                            showBlendColorPicker = false
+                        },
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_liquid_glass_blend_color_done)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

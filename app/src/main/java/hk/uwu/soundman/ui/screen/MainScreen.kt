@@ -267,7 +267,6 @@ fun MainScreen(
                                     paddingValues = paddingValues,
                                     scrollBehavior = settingsScrollBehavior,
                                     settingsStore = settingsStore,
-                                    liquidGlassBackdrop = liquidGlassBackdrop,
                                 )
                             }
 
