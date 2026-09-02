@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,14 +37,17 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.createBitmap
+import com.kyant.backdrop.Backdrop
 import hk.uwu.soundman.miuix.basic.SInputField
 import hk.uwu.soundman.ui.basic.OverScrollState
 import hk.uwu.soundman.ui.basic.overScrollVertical
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Checkbox
@@ -72,7 +76,7 @@ fun AppPickerContent(
     strings: AppPickerStrings,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
-    backdrop: com.kyant.backdrop.Backdrop? = null,
+    backdrop: Backdrop? = null,
 ) {
     val loadState by state.loadState.collectAsStateLifecycleAware()
     var searchExpanded by remember { mutableStateOf(false) }
@@ -252,7 +256,7 @@ private fun ErrorState(message: String) {
                 text = message,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 fontSize = 14.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -283,7 +287,7 @@ private fun EmptyState(text: String) {
 private object AppIconCache {
     private val cache = LruCache<String, ImageBitmap>(96)
     fun get(packageName: String): ImageBitmap? = cache.get(packageName)
-    fun put(packageName: String, bitmap: ImageBitmap) = cache.put(packageName, bitmap)
+    fun put(packageName: String, bitmap: ImageBitmap): ImageBitmap? = cache.put(packageName, bitmap)
 }
 
 /**
@@ -338,6 +342,6 @@ private fun rememberAppIcon(
  */
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateLifecycleAware(): androidx.compose.runtime.State<T> {
+private fun <T> StateFlow<T>.collectAsStateLifecycleAware(): State<T> {
     return this.collectAsState(initial = value)
 }

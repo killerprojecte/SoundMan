@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -41,35 +40,26 @@ fun SettingSwitchItem(
     enabled: Boolean = true,
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.45f),
+        modifier = modifier.fillMaxWidth(),
     ) {
         BasicComponent(
-            onClick = { if (enabled) onCheckedChange(!checked) },
+            title = title,
+            summary = summary,
+            onClick = if (enabled) {
+                { onCheckedChange(!checked) }
+            } else null,
+            enabled = enabled,
             endActions = {
                 Switch(
                     checked = checked,
-                    onCheckedChange = { if (enabled) onCheckedChange(it) },
+                    onCheckedChange = if (enabled) {
+                        { onCheckedChange(it) }
+                    } else null,
                     enabled = enabled,
                 )
             },
             insideMargin = PaddingValues(16.dp),
-        ) {
-            Text(
-                text = title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
-            if (summary != null) {
-                Text(
-                    text = summary,
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
+        )
     }
 }
 
@@ -93,9 +83,7 @@ fun SettingSliderItem(
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.45f),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier
@@ -103,6 +91,13 @@ fun SettingSliderItem(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val titleColor = if (enabled) MiuixTheme.colorScheme.onSurface
+            else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+            val summaryColor = if (enabled) MiuixTheme.colorScheme.onSurfaceVariantSummary
+            else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+            val valueLabelColor = if (enabled) MiuixTheme.colorScheme.primary
+            else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -111,14 +106,14 @@ fun SettingSliderItem(
                     text = title,
                     fontSize = MiuixTheme.textStyles.headline1.fontSize,
                     fontWeight = FontWeight.Medium,
-                    color = MiuixTheme.colorScheme.onSurface,
+                    color = titleColor,
                 )
                 if (valueLabel != null) {
                     Text(
                         text = valueLabel,
                         fontSize = MiuixTheme.textStyles.headline1.fontSize,
                         fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.primary,
+                        color = valueLabelColor,
                     )
                 }
             }
@@ -126,7 +121,7 @@ fun SettingSliderItem(
                 Text(
                     text = summary,
                     fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    color = summaryColor,
                 )
             }
             SSlider(
@@ -189,12 +184,13 @@ fun SettingColorItem(
     enabled: Boolean = true,
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.45f),
+        modifier = modifier.fillMaxWidth(),
     ) {
         BasicComponent(
-            onClick = { if (enabled) onClick() },
+            title = title,
+            summary = summary,
+            onClick = if (enabled) onClick else null,
+            enabled = enabled,
             endActions = {
                 Box(
                     modifier = Modifier
@@ -210,20 +206,6 @@ fun SettingColorItem(
                 )
             },
             insideMargin = PaddingValues(16.dp),
-        ) {
-            Text(
-                text = title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
-            if (summary != null) {
-                Text(
-                    text = summary,
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
+        )
     }
 }
