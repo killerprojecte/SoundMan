@@ -15,9 +15,6 @@ object SystemUiVolumeEntryLayout {
     /** 找不到音量条与 ringer 之间官方空隙时的 fail-fast 间距。 */
     const val MARGIN_VERTICAL_DP = 4
 
-    /** 旧 logo 内边距；默认路径抄 DND `icon`，不再用它画模块 logo。 */
-    const val LOGO_PADDING_DP = 10
-
     /** 仅作 circularButtonSpec 辅助色，禁止再拿它画纯白圆钮。 */
     const val FILL_ARGB = 0xFFFFFFFF.toInt()
 
@@ -133,6 +130,19 @@ object SystemUiVolumeEntryLayout {
      * 插入时若它已经 VISIBLE，说明面板已展开，入口必须立刻 GONE。
      */
     const val TIMER_LAYOUT_RESOURCE_NAME = "timer_layout"
+
+    /**
+     * 官方折叠态音量面板背景高度 dimen，按优先级查找。
+     *
+     * 横屏折叠态 `MiuiVolumeDialogRes.getMarginTop` 用 `(屏幕高 - 该高度) / 2`
+     * 做竖直居中；模块把入口插进 `MiuiVolumeDialogView` 后实际高度变大，
+     * 需要按同一高度基准做补偿。`miui_volume_background_height_cc` 是
+     * 控制中心面板（needShowDialog=false）的等价 dimen，作为兜底查找。
+     */
+    val CENTERED_HEIGHT_DIMEN_NAMES: List<String> = listOf(
+        "o3_miui_volume_background_height",
+        "miui_volume_background_height_cc",
+    )
 
     /**
      * 音量面板展开时隐藏第三颗只有紧凑态的入口。

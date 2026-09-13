@@ -5,10 +5,12 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Outline
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -16,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -26,6 +29,7 @@ import hk.uwu.soundman.R
 import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialRingerBlur
 import hk.uwu.soundman.overlay.OverlayOpenRequest
 import java.lang.ref.WeakReference
+import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -113,6 +117,7 @@ class SystemUiVolumeEntryRuntime(
 
     private fun cleanupEntry(entry: View): Boolean {
         return try {
+            removeCenteringFollow(entry)
             removeDragFollow(entry)
             (entry.parent as? ViewGroup)?.removeView(entry)
             entry.setOnClickListener(null)
@@ -711,6 +716,179 @@ class SystemUiVolumeEntryRuntime(
         }
 
         /**
+         * 安装横屏居中补偿跟随。
+         *
+         * 动机：官方折叠态 `MiuiVolumeDialogRes.getMarginTop` 在横屏返回
+         * `(屏幕高 - o3_miui_volume_background_height) / 2`，即按"官方内容高度"
+         * 竖直居中。SoundMan 入口插入 `MiuiVolumeDialogView` 内部后实际高度多了
+         * `entry + gap`，但 topMargin 仍按官方高度计算，导致整体下移 `(entry+gap)/2`。
+         * 竖屏时官方用固定 dimen 做 topMargin，不存在居中问题，不补偿。
+         *
+         * 方案：在 dialogView 上挂 OnLayoutChangeListener，每次布局后检查
+         * `MarginLayoutParams.topMargin`；横屏 + 入口可见（折叠态）时把 topMargin
+         * 减去 `entry.measuredHeight + entry.bottomMargin` 的一半，让整组重新居中。
+         * 官方在旋转/展开/收起时会重写 topMargin 触发 onLayoutChange，这里自修正：
+         * 只要当前值不等于我们上次写入的值，就把它当作官方新基准重新补偿。
+         *
+         * @param entry 已插入的入口按钮
+         * @param root 音量侧栏根视图（MiuiRingerModeLayout）
+         * @param log 日志函数
+         */
+        private fun installCenteringFollow(
+            entry: View,
+            root: View,
+            log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
+        ) {
+            val dialog = resolveDialogBound(root)
+            if (dialog === root) {
+                log(Log.WARN, TAG, "Centering follow skipped: dialog bound not found", null)
+                return
+            }
+            val packages = SystemUiVolumeEntryLayout.resourcePackages(root.context.packageName)
+            val officialHeight = resolveNamedDimenPx(
+                root.context,
+                packages,
+                SystemUiVolumeEntryLayout.CENTERED_HEIGHT_DIMEN_NAMES,
+                log,
+            )
+            if (officialHeight == null || officialHeight <= 0) {
+                log(
+                    Log.ERROR,
+                    TAG,
+                    "Centering follow skipped: official collapsed height dimen missing " +
+                            "${SystemUiVolumeEntryLayout.CENTERED_HEIGHT_DIMEN_NAMES}",
+                    null,
+                )
+                return
+            }
+            removeCenteringFollowForDialog(dialog)
+            val follow = CenteringFollow(WeakReference(entry), officialHeight, log)
+            val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                applyCenteringFollow(dialog, follow)
+            }
+            follow.listener = listener
+            dialog.addOnLayoutChangeListener(listener)
+            centeringFollows[dialog] = follow
+            applyCenteringFollow(dialog, follow)
+        }
+
+        /**
+         * 移除入口的横屏居中补偿并恢复官方 topMargin。
+         *
+         * @param entry 已被移除/清理的入口按钮
+         */
+        private fun removeCenteringFollow(entry: View) {
+            val iterator = centeringFollows.entries.iterator()
+            while (iterator.hasNext()) {
+                val item = iterator.next()
+                if (item.value.entry.get() === entry) {
+                    restoreCentering(item.key, item.value)
+                    item.value.listener?.let { item.key.removeOnLayoutChangeListener(it) }
+                    iterator.remove()
+                }
+            }
+        }
+
+        private fun removeCenteringFollowForDialog(dialog: View) {
+            val follow = centeringFollows.remove(dialog) ?: return
+            follow.listener?.let { dialog.removeOnLayoutChangeListener(it) }
+            restoreCentering(dialog, follow)
+        }
+
+        /**
+         * 恢复被补偿过的 topMargin 为官方基准值。
+         */
+        private fun restoreCentering(dialog: View, follow: CenteringFollow) {
+            val applied = follow.applied ?: return
+            val layoutParams = dialog.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+            if (layoutParams.topMargin == applied) {
+                layoutParams.topMargin = follow.lastBase
+                dialog.layoutParams = layoutParams
+            }
+            follow.applied = null
+        }
+
+        /**
+         * 重新计算并应用横屏居中补偿；自修正官方重写。
+         *
+         * 仅在满足全部条件时补偿：横屏、入口可见（折叠态）、入口已测量、
+         * 官方当前 topMargin 等于 `(屏幕高 - 官方高度) / 2`（即官方确实在居中）。
+         * 最后一条检查可以天然排除 flip-tiny/wide-fold 等官方不走居中的路径，
+         * 避免在固定 topMargin 布局上误加补偿。
+         */
+        private fun applyCenteringFollow(dialog: View, follow: CenteringFollow) {
+            val entry = follow.entry.get()
+            val layoutParams = dialog.layoutParams as? ViewGroup.MarginLayoutParams
+            if (entry == null || layoutParams == null) {
+                return
+            }
+            val current = layoutParams.topMargin
+            val base = if (follow.applied == current) follow.lastBase else current
+            val landscape = dialog.resources.configuration.orientation ==
+                    Configuration.ORIENTATION_LANDSCAPE
+            if (!landscape || !entry.isVisible || entry.measuredHeight <= 0) {
+                if (follow.applied != null && current == follow.applied) {
+                    layoutParams.topMargin = base
+                    dialog.layoutParams = layoutParams
+                }
+                follow.applied = null
+                return
+            }
+            val displayHeight = realDisplayHeight(dialog)
+            val centered = (displayHeight - follow.officialHeight) / 2
+            if (base != centered) {
+                if (follow.applied != null && current == follow.applied) {
+                    layoutParams.topMargin = follow.lastBase
+                    dialog.layoutParams = layoutParams
+                }
+                follow.applied = null
+                if (!follow.mismatchLogged) {
+                    follow.mismatchLogged = true
+                    follow.log(
+                        Log.WARN,
+                        TAG,
+                        "Landscape centering skipped: official margin $base != " +
+                                "(display $displayHeight - height ${follow.officialHeight}) / 2",
+                        null,
+                    )
+                }
+                return
+            }
+            val entryMargin =
+                (entry.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+            val extra = entry.measuredHeight + entryMargin
+            val compensated = base - extra / 2
+            follow.lastBase = base
+            if (current != compensated) {
+                layoutParams.topMargin = compensated
+                dialog.layoutParams = layoutParams
+            }
+            follow.applied = compensated
+        }
+
+        private fun realDisplayHeight(view: View): Int {
+            val metrics = DisplayMetrics()
+            val windowManager =
+                view.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            @Suppress("DEPRECATION")
+            windowManager?.defaultDisplay?.getRealMetrics(metrics)
+            return metrics.heightPixels
+        }
+
+        private data class CenteringFollow(
+            val entry: WeakReference<View>,
+            val officialHeight: Int,
+            val log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
+        ) {
+            var listener: View.OnLayoutChangeListener? = null
+            var lastBase: Int = 0
+            var applied: Int? = null
+            var mismatchLogged: Boolean = false
+        }
+
+        private val centeringFollows = WeakHashMap<View, CenteringFollow>()
+
+        /**
          * 查找官方音量侧栏中被 SlideContainerAnim 动画驱动的容器视图。
          *
          * 优先从入口按钮向上搜索 miui_volume_content / volume_dialog_content；
@@ -731,6 +909,7 @@ class SystemUiVolumeEntryRuntime(
             return findAnimatedContainerDownward(rootParent, packages)
         }
 
+        @SuppressLint("DiscouragedApi")
         private fun isAnimatedContainerId(view: View, packages: List<String>): Boolean {
             if (view.id == View.NO_ID) return false
             val resources = view.context.resources
@@ -854,6 +1033,7 @@ class SystemUiVolumeEntryRuntime(
                     return
                 }
                 installDragFollow(entry, root, pluginClassLoader, log)
+                installCenteringFollow(entry, root, log)
                 entry.tag = ENTRY_TAG
                 val action = if (existing === entry) "adopted" else "inserted"
                 log(
@@ -1115,7 +1295,7 @@ class SystemUiVolumeEntryRuntime(
             return drawable
         }
 
-        @SuppressLint("UseCompatLoadingForDrawables")
+        @SuppressLint("UseCompatLoadingForDrawables", "DiscouragedApi")
         private fun resolveNamedDrawable(
             context: Context,
             packages: List<String>,
@@ -1145,6 +1325,7 @@ class SystemUiVolumeEntryRuntime(
             return null
         }
 
+        @SuppressLint("DiscouragedApi")
         private fun resolveNamedDimenPx(
             context: Context,
             packages: List<String>,
@@ -1195,6 +1376,7 @@ class SystemUiVolumeEntryRuntime(
             )
         }
 
+        @SuppressLint("DiscouragedApi")
         private fun findViewByIdName(
             scope: View,
             name: String,
