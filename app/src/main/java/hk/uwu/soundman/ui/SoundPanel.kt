@@ -69,6 +69,7 @@ import hk.uwu.soundman.R
 import hk.uwu.soundman.data.APP_BLACKLIST_PREFERENCES_NAME
 import hk.uwu.soundman.data.APP_SETTINGS_PREFERENCES_NAME
 import hk.uwu.soundman.data.ActiveMediaAppsState
+import hk.uwu.soundman.data.AdjustableAppLoader
 import hk.uwu.soundman.data.AudioDeviceScan
 import hk.uwu.soundman.data.AudioDevicesSource
 import hk.uwu.soundman.data.HostAudioDevicesSource
@@ -86,8 +87,11 @@ import hk.uwu.soundman.model.AdjustableApp
 import hk.uwu.soundman.model.AppAudioRule
 import hk.uwu.soundman.model.OutputDeviceType
 import hk.uwu.soundman.model.OutputTarget
+import hk.uwu.soundman.overlay.SeededPlayback
 import hk.uwu.soundman.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.time.Duration.Companion.milliseconds
@@ -108,6 +112,14 @@ fun SoundPanel(
     onRequestInstalledAppsPermission: (() -> Unit)? = null,
     installedAppsPermissionRevision: Int = 0,
     fromVolumeSidebar: Boolean = false,
+    /**
+     * 侧栏入口带过来的「正在播放」清单。
+     *
+     * 只用来填宿主首帧快照到达之前的空窗：面板进程要连宿主做一次握手，
+     * 冷启动时这段时间列表是空的（表现为「点开要等一下才出音量条」）。
+     * 宿主快照一到（[ActiveMediaAppsState.Available.fromHost] = true）就以宿主为准。
+     */
+    seededPlayback: List<SeededPlayback> = emptyList(),
 ) {
     require(installedAppsPermissionRevision >= 0) { "installedAppsPermissionRevision must not be negative" }
     val applicationContext = context.applicationContext
@@ -139,7 +151,36 @@ fun SoundPanel(
     val hostSource = remember(applicationContext, hasInstalledAppsAccess) {
         HostPlaybackSource(applicationContext, ruleStore, installedAppsAccess)
     }
-    var mediaState by remember { mutableStateOf<ActiveMediaAppsState>(ActiveMediaAppsState.Available(emptyList())) }
+    var mediaState by remember {
+        mutableStateOf<ActiveMediaAppsState>(ActiveMediaAppsState.Available(emptyList(), fromHost = false))
+    }
+    // 种子只在开场解析一次，且走 IO：查 PackageManager 拉图标不该卡住入场动画。
+    var seededApps by remember { mutableStateOf(emptyList<AdjustableApp>()) }
+    LaunchedEffect(seededPlayback, hasInstalledAppsAccess) {
+        seededApps = if (seededPlayback.isEmpty()) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) {
+                seededPlayback.map { seed ->
+                    AdjustableAppLoader.load(
+                        applicationContext,
+                        seed.packageName,
+                        seed.uid,
+                        hasInstalledAppsAccess,
+                    )
+                }
+            }
+        }
+    }
+    // 宿主还没说话之前先用侧栏带过来的清单占位，避免面板先空一下再刷出音量条。
+    val effectiveMediaState = remember(mediaState, seededApps) {
+        val available = mediaState as? ActiveMediaAppsState.Available
+        if (available != null && !available.fromHost && seededApps.isNotEmpty()) {
+            ActiveMediaAppsState.Available(seededApps, fromHost = false)
+        } else {
+            mediaState
+        }
+    }
     DisposableEffect(hostSource) {
         var lastStateLogMillis = -SOURCE_STATE_LOG_INTERVAL_MILLIS
         var lastStateSignature: Pair<String, Int>? = null
@@ -173,8 +214,8 @@ fun SoundPanel(
         onScan = { deviceScan = it },
     )
     val currentApps = rememberDebouncedPlaybackApps(
-        apps = (mediaState as? ActiveMediaAppsState.Available)?.apps.orEmpty(),
-        active = mediaState is ActiveMediaAppsState.Available,
+        apps = (effectiveMediaState as? ActiveMediaAppsState.Available)?.apps.orEmpty(),
+        active = effectiveMediaState is ActiveMediaAppsState.Available,
     )
     LaunchedEffect(currentApps, selectedPackage) {
         if (selectedPackage != null && currentApps.none { it.packageName == selectedPackage }) selectedPackage = null
@@ -319,7 +360,7 @@ fun SoundPanel(
                                 InstalledAppsPermissionHint(onClick = onRequestInstalledAppsPermission)
                                 Spacer(Modifier.height(12.dp))
                             }
-                            when (val currentMediaState = mediaState) {
+                            when (val currentMediaState = effectiveMediaState) {
                                 is ActiveMediaAppsState.Error -> PreferencesUnavailable(stringResource(R.string.panel_host_error))
                                 is ActiveMediaAppsState.Available -> AppVolumeList(
                                     apps = currentApps.filter { app ->

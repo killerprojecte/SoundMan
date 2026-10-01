@@ -9,6 +9,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import hk.uwu.soundman.ipc.PreferredDeviceSync
@@ -19,6 +20,8 @@ import hk.uwu.soundman.model.AudioOutputDevice
 import hk.uwu.soundman.model.OutputTarget
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
@@ -529,5 +532,60 @@ class ProviderPanelPlayback(private val systemUiContext: Context) {
     } catch (error: RuntimeException) {
         AppLog.error("Unable to call panel bridge method=$method", error)
         throw error
+    }
+}
+
+/**
+ * 把面板要用的宿主握手提前跑掉，别等到用户点开按钮才开始。
+ *
+ * Provider 里的 `panelSnapshot` 初始是 [PanelPlaybackStatus.CONNECTING]，要等模块进程起来、
+ * 连上 system_server 的宿主、拿到第一份快照才会变成 AVAILABLE —— 实测这段大约 700ms。
+ * 面板打开后第一次轮询撞上 CONNECTING 就只能空着，下一次轮询又是整整
+ * `POLL_INTERVAL_MILLIS` 之后，于是用户看到「音量条等一下才出来」。
+ *
+ * 音量侧栏一出现就在这里后台跑一次快照（比用户点按钮早几百毫秒），
+ * 把进程启动和宿主握手挪到点击之前；真正点开时 Provider 里那份快照已经是 AVAILABLE，
+ * 首帧就能把应用列出来。结果直接丢弃：预热的意义是让 Provider 那份缓存变热。
+ */
+object PanelBridgePrewarm {
+    /** 两次预热之间的最小间隔；侧栏反复重建时不必每次都打扰模块进程。 */
+    private const val MIN_INTERVAL_MILLIS = 3_000L
+
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "SoundMan.PanelPrewarm").apply { isDaemon = true }
+    }
+
+    @Volatile
+    private var lastAttemptMillis = Long.MIN_VALUE
+
+    /**
+     * 后台预热一次面板桥接。
+     *
+     * 全程不抛异常、不阻塞调用线程：预热只是优化，失败顶多回到原来的等待。
+     *
+     * @param context 用来解析 Provider 的上下文（通常取侧栏根 View 的 context）
+     * @param log 可选诊断回调
+     */
+    fun warm(context: Context, log: ((String, Throwable?) -> Unit)? = null) {
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastAttemptMillis
+        if (previous != Long.MIN_VALUE && now - previous < MIN_INTERVAL_MILLIS) return
+        lastAttemptMillis = now
+        val target = context.applicationContext ?: context
+        try {
+            executor.execute {
+                val started = SystemClock.elapsedRealtime()
+                val outcome = runCatching { ProviderPanelPlayback(target).snapshot() }
+                val status = outcome.getOrNull()?.status
+                val elapsed = SystemClock.elapsedRealtime() - started
+                log?.invoke(
+                    "[SoundMan.Prewarm] panel bridge prewarm status=$status " +
+                        "rows=${outcome.getOrNull()?.rows?.size ?: 0} elapsed=${elapsed}ms",
+                    outcome.exceptionOrNull(),
+                )
+            }
+        } catch (error: Throwable) {
+            log?.invoke("[SoundMan.Prewarm] panel bridge prewarm rejected", error)
+        }
     }
 }

@@ -47,6 +47,61 @@ class OverlayOpenRequestTest {
     }
 
     @Test
+    fun seededPlaybackRoundTripsThroughExtras() {
+        val seeds = listOf(SeededPlayback(10123, "com.example.music"))
+        val request = OverlayOpenRequest(fromVolumeSidebar = true, seededPlayback = seeds)
+        val extras = request.extras()
+
+        assertEquals(seeds, OverlayOpenRequest.parseSeededPlayback(extras))
+        assertEquals(seeds, OverlayOpenRequest.fromExtras(extras).seededPlayback)
+        assertTrue(OverlayOpenRequest.fromExtras(extras).fromVolumeSidebar)
+    }
+
+    @Test
+    fun seededPlaybackIsEmptyWithoutExtras() {
+        assertTrue(OverlayOpenRequest.fromExtras(null).seededPlayback.isEmpty())
+        assertTrue(OverlayOpenRequest.fromExtras(emptyMap()).seededPlayback.isEmpty())
+        assertTrue(OverlayOpenRequest(fromVolumeSidebar = false).extras().keys.none { it.contains("SEED") })
+    }
+
+    @Test
+    fun malformedSeedsAreDropped() {
+        val uids = intArrayOf(10123, 10124)
+        assertTrue(
+            OverlayOpenRequest.parseSeededPlayback(
+                mapOf(
+                    OverlayOpenRequest.EXTRA_SEED_UIDS to uids,
+                    OverlayOpenRequest.EXTRA_SEED_PACKAGES to arrayOf("com.example.music"),
+                ),
+            ).isEmpty()
+        )
+        assertTrue(
+            OverlayOpenRequest.parseSeededPlayback(
+                mapOf(
+                    OverlayOpenRequest.EXTRA_SEED_UIDS to intArrayOf(-1),
+                    OverlayOpenRequest.EXTRA_SEED_PACKAGES to arrayOf("com.example.music"),
+                ),
+            ).isEmpty()
+        )
+        assertTrue(
+            OverlayOpenRequest.parseSeededPlayback(
+                mapOf(
+                    OverlayOpenRequest.EXTRA_SEED_UIDS to intArrayOf(10123),
+                    OverlayOpenRequest.EXTRA_SEED_PACKAGES to arrayOf("  "),
+                ),
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun sidebarLaunchCarriesSeeds() {
+        val seeds = listOf(SeededPlayback(10123, "com.example.music"))
+        val launch = OverlayOpenRequest.sidebarActivityLaunch(seeds)
+
+        assertEquals(seeds, OverlayOpenRequest.fromExtras(launch.extras).seededPlayback)
+    }
+
+    @Test
     fun volumeSidebarDismissesWithBackDownThenUp() {
         assertEquals(
             listOf(

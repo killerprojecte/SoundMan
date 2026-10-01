@@ -1,7 +1,6 @@
 package hk.uwu.soundman.data
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -9,7 +8,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import com.highcapable.kavaref.extension.classOf
-import hk.uwu.soundman.R
 import hk.uwu.soundman.hook.scopes.system.hidden.SystemMediaDeviceProbe
 import hk.uwu.soundman.ipc.PreferredDeviceSync
 import hk.uwu.soundman.ipc.SoundManHostBridgeClient
@@ -24,7 +22,17 @@ import java.util.concurrent.Executors
 enum class ActiveMediaAppsError { HOST_UNAVAILABLE }
 
 sealed interface ActiveMediaAppsState {
-    data class Available(val apps: List<AdjustableApp>) : ActiveMediaAppsState
+    /**
+     * @param apps 当前应用列表
+     * @param fromHost 这份列表是不是宿主真实快照。
+     *                 侧栏打开时面板会先用入口带过来的种子占位（[fromHost] = false），
+     *                 宿主首帧快照一到就以它为准，避免「点开先空一下再刷出音量条」。
+     */
+    data class Available(
+        val apps: List<AdjustableApp>,
+        val fromHost: Boolean = true,
+    ) : ActiveMediaAppsState
+
     data class Error(val reason: ActiveMediaAppsError) : ActiveMediaAppsState
 }
 
@@ -47,7 +55,6 @@ class HostPlaybackSource(
     private val installedAppsAccess: InstalledAppsAccess,
 ) : ActiveMediaAppsSource, AutoCloseable {
     private val applicationContext = context.applicationContext
-    private val packageManager = applicationContext.packageManager
     private val observers = CopyOnWriteArraySet<(ActiveMediaAppsState) -> Unit>()
     private val resultObservers = CopyOnWriteArraySet<(HostCommandResult) -> Unit>()
     private val deviceObservers = CopyOnWriteArraySet<(AudioDeviceScan) -> Unit>()
@@ -60,7 +67,7 @@ class HostPlaybackSource(
     private val workerDispatchLock = Any()
 
     @Volatile
-    private var state: ActiveMediaAppsState = ActiveMediaAppsState.Available(emptyList())
+    private var state: ActiveMediaAppsState = ActiveMediaAppsState.Available(emptyList(), fromHost = false)
 
     @Volatile
     private var deviceScan = AudioDeviceScan(emptyList(), AudioDeviceScanError.HOST_UNAVAILABLE)
@@ -388,34 +395,12 @@ class HostPlaybackSource(
         publish(ActiveMediaAppsState.Available(apps))
     }
 
-    private fun loadApp(packageName: String, uid: Int): AdjustableApp {
-        if (!installedAppsAccess.hasAccess(applicationContext)) {
-            AppLog.warn("Skipping package lookup for uid=$uid package=$packageName without installed-apps access")
-            return unknownApp(packageName, uid)
-        }
-        try {
-            val info = packageManager.getApplicationInfo(packageName, 0)
-            return AdjustableApp(
-                packageName = packageName,
-                label = info.loadLabel(packageManager).toString(),
-                uid = uid,
-                icon = info.loadIcon(packageManager),
-                isSystemApp = info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0,
-            )
-        } catch (error: PackageManager.NameNotFoundException) {
-            AppLog.warn("Active uid=$uid package=$packageName is no longer installed", error)
-        }
-        return unknownApp(packageName, uid)
-    }
-
-    private fun unknownApp(packageName: String, uid: Int): AdjustableApp {
-        return AdjustableApp(
-            packageName = packageName,
-            label = applicationContext.getString(R.string.unknown_app, uid),
-            uid = uid,
-            icon = packageManager.defaultActivityIcon,
-        )
-    }
+    private fun loadApp(packageName: String, uid: Int): AdjustableApp = AdjustableAppLoader.load(
+        context = applicationContext,
+        packageName = packageName,
+        uid = uid,
+        allowPackageLookup = installedAppsAccess.hasAccess(applicationContext),
+    )
 
     private fun publishResult(result: SoundManProtocol.CommandResult) {
         val publicResult = HostCommandResult(

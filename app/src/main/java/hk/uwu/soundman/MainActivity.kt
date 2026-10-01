@@ -95,6 +95,18 @@ class MainActivity : ComponentActivity() {
             liquidGlassBlendColorMirror = { color ->
                 SystemUiAppSettingsSync.persistLiquidGlassBlendColor(this, color)
             },
+            entryPositionMirror = { position ->
+                SystemUiAppSettingsSync.persistEntryPosition(this, position)
+            },
+            entryPlaybackOnlyMirror = { enabled ->
+                SystemUiAppSettingsSync.persistEntryPlaybackOnlyEnabled(this, enabled)
+            },
+            entryMaterialMirror = { material ->
+                SystemUiAppSettingsSync.persistEntryMaterial(this, material)
+            },
+            hyperLightPanelGlassMirror = { enabled ->
+                SystemUiAppSettingsSync.persistHyperLightPanelGlassEnabled(this, enabled)
+            },
         )
         try {
             SystemUiAppSettingsSync.persistBuiltinPanelEnabled(
@@ -181,6 +193,50 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             AppLog.error(
                 "Unable to synchronize liquid glass blend color during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistEntryPosition(
+                this,
+                settingsStore.read().entryPosition,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize volume entry position during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistEntryPlaybackOnlyEnabled(
+                this,
+                settingsStore.read().entryPlaybackOnlyEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize entry playback-only setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistEntryMaterial(
+                this,
+                settingsStore.read().entryMaterial,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize entry material setting during startup",
+                error
+            )
+        }
+        try {
+            SystemUiAppSettingsSync.persistHyperLightPanelGlassEnabled(
+                this,
+                settingsStore.read().hyperLightPanelGlassEnabled,
+            )
+        } catch (error: RuntimeException) {
+            AppLog.error(
+                "Unable to synchronize HyperLight panel glass setting during startup",
                 error
             )
         }

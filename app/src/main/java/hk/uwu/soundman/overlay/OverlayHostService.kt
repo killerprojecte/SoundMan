@@ -61,7 +61,8 @@ class OverlayHostService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                showPanel(OverlayOpenRequest.fromIntent(intent).fromVolumeSidebar)
+                val request = OverlayOpenRequest.fromIntent(intent)
+                showPanel(request.fromVolumeSidebar, request.seededPlayback)
             }
             else -> {
                 AppLog.error("Unsupported overlay action: ${intent?.action}")
@@ -78,7 +79,7 @@ class OverlayHostService : Service() {
         super.onDestroy()
     }
 
-    private fun showPanel(fromVolumeSidebar: Boolean) {
+    private fun showPanel(fromVolumeSidebar: Boolean, seededPlayback: List<SeededPlayback>) {
         if (panelView != null) return
         val owner = OverlayComposeOwner(onBack = ::stopSelf).also { it.start() }
         val view = ComposeView(this).apply {
@@ -112,6 +113,7 @@ class OverlayHostService : Service() {
                     onWindowReveal = ::applyWindowReveal,
                     onRequestInstalledAppsPermission = ::openMainActivityForInstalledAppsPermission,
                     fromVolumeSidebar = fromVolumeSidebar,
+                    seededPlayback = seededPlayback,
                 )
             }
         }

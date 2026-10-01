@@ -65,6 +65,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /** 在 MiuiVolumeDialogView 旁挂载独立应用音量页，不触碰官方展开状态或内部 View 树。 */
@@ -78,6 +79,13 @@ class SystemUiBuiltinVolumePanel(
     private val liquidGlassRefractionEnabled: () -> Boolean = { false },
     private val liquidGlassBlurRadius: () -> Int = { 20 },
     private val liquidGlassBlendColor: () -> Int = { 0x20FFFFFF },
+    /**
+     * 尝试给面板挂上 HyperLight 的液态玻璃（系统音量条展开面板同款）。
+     *
+     * 返回 true 表示玻璃已经交给 HyperLight，面板不再叠加自研玻璃；
+     * false 表示拿不到（未安装、未开启、混淆类名变了），继续走 [liquidGlassEnabled] 那套自研玻璃。
+     */
+    private val hyperLightPanelGlass: (View, Float) -> Boolean = { _, _ -> false },
 ) {
     fun closeFor(sourceView: View) {
         try {
@@ -143,6 +151,7 @@ class SystemUiBuiltinVolumePanel(
                 liquidGlassRefractionEnabled = liquidGlassRefractionEnabled,
                 liquidGlassBlurRadius = liquidGlassBlurRadius,
                 liquidGlassBlendColor = liquidGlassBlendColor,
+                hyperLightPanelGlass = hyperLightPanelGlass,
                 onClosed = { closedSession ->
                     synchronized(sessions) {
                         if (sessions[dialog] === closedSession) sessions.remove(dialog)
@@ -196,6 +205,7 @@ class SystemUiBuiltinVolumePanel(
         private val liquidGlassRefractionEnabled: () -> Boolean,
         private val liquidGlassBlurRadius: () -> Int,
         private val liquidGlassBlendColor: () -> Int,
+        private val hyperLightPanelGlass: (View, Float) -> Boolean,
         private val onClosed: (Session) -> Unit,
     ) {
         private val closed = AtomicBoolean(false)
@@ -211,6 +221,8 @@ class SystemUiBuiltinVolumePanel(
                 Thread(runnable, "SoundMan.PanelBridge").apply { isDaemon = true }
             }
         private val panelBridge = ProviderPanelPlayback(targetContext)
+        private val connectingRetries = AtomicInteger(0)
+        private val connectingRetryScheduled = AtomicBoolean(false)
         private val deviceRows = DevicePageRows()
         private val originalVisibility = dialog.visibility
         private val originalAlpha = dialog.alpha
@@ -300,7 +312,10 @@ class SystemUiBuiltinVolumePanel(
             panel.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(v: View) {
                     try {
-                        attachLiquidGlass(expandedMaterial.apply(panel))
+                        // 先套官方展开材质：它同时是 HyperLight 玻璃拿不到时的兜底底色。
+                        val mode = expandedMaterial.apply(panel)
+                        // 跟随 HyperLight 时不再叠自研玻璃——两条玻璃叠一起会互相盖住。
+                        if (!attachHyperLightPanelGlass()) attachLiquidGlass(mode)
                     } catch (throwable: Throwable) {
                         log(
                             Log.ERROR,
@@ -692,7 +707,11 @@ class SystemUiBuiltinVolumePanel(
                     requestOverlayFallback(taskGeneration, "host unavailable")
                     return
                 }
-                if (snapshot.status == PanelPlaybackStatus.CONNECTING) return
+                if (snapshot.status == PanelPlaybackStatus.CONNECTING) {
+                    scheduleConnectingRetry(taskGeneration)
+                    return
+                }
+                connectingRetries.set(0)
                 val fingerprint = SystemUiIndependentPanelPolicy.fingerprint(snapshot)
                 if (fingerprint == lastFingerprint) return
                 val loaded = loadSnapshot(snapshot)
@@ -707,6 +726,31 @@ class SystemUiBuiltinVolumePanel(
             } catch (throwable: Throwable) {
                 log(Log.ERROR, TAG, "Unable to poll panel bridge", throwable)
                 requestOverlayFallback(taskGeneration, "panel bridge failure")
+            }
+        }
+
+        /**
+         * CONNECTING 时补一次短间隔重试，别干等整个 [POLL_INTERVAL_MILLIS]。
+         *
+         * 心跳是 750ms 一跳，握手又恰好几百毫秒，单靠心跳会把「连上了」这件事
+         * 平均推迟小半秒。这里在心跳之外再按 60ms 追一阵，把量化误差压下去；
+         * 追够 [MAX_CONNECTING_RETRIES] 次就交还给心跳，避免无限打 Provider。
+         */
+        private fun scheduleConnectingRetry(taskGeneration: Long) {
+            if (connectingRetries.incrementAndGet() > MAX_CONNECTING_RETRIES) return
+            if (!connectingRetryScheduled.compareAndSet(false, true)) return
+            try {
+                executor.schedule(
+                    {
+                        connectingRetryScheduled.set(false)
+                        pollSnapshot(taskGeneration)
+                    },
+                    CONNECTING_RETRY_MILLIS,
+                    TimeUnit.MILLISECONDS,
+                )
+            } catch (error: Throwable) {
+                connectingRetryScheduled.set(false)
+                log(Log.DEBUG, TAG, "Panel bridge connecting retry was rejected", error)
             }
         }
 
@@ -2479,6 +2523,36 @@ class SystemUiBuiltinVolumePanel(
         }
 
         /**
+         * 让面板用上和**系统音量条展开面板**同一条 HyperLight 玻璃链路。
+         *
+         * 官方那颗玻璃挂在 `MiuiVolumeDialogMotion.mExpandBgView` 上，是 HyperLight 自己
+         * hook `updateExpandBgState` 时用 `ht.a(view, 0f, "components_no_shadow", 1)` 挂的；
+         * 这里对自建面板调同一个入口，场景名、flag、后续挂载 job 全部与系统一致，
+         * 用户在 HyperLight 里改参数面板也跟着变。
+         *
+         * 半径用我们的 [panelOutlineRadius]（官方 `MiuiVolumeDialogRes.getBgRadius`，
+         * 与系统展开面板同一个资源值）；官方调用点传的是 0f，但那只是它没有现成半径可用。
+         *
+         * @return 已经交给 HyperLight；false 时调用方继续走自研玻璃
+         */
+        private fun attachHyperLightPanelGlass(): Boolean {
+            val radius = panelOutlineRadius.toFloat()
+            val attached = try {
+                hyperLightPanelGlass(panel, radius)
+            } catch (throwable: Throwable) {
+                log(Log.ERROR, TAG, "HyperLight panel glass threw; keeping official material", throwable)
+                false
+            }
+            log(
+                Log.INFO,
+                TAG,
+                "HyperLight panel glass attached=$attached radius=$radius mode=components_no_shadow",
+                null,
+            )
+            return attached
+        }
+
+        /**
          * 官方材质就位后按需叠加液态玻璃层。
          *
          * 官方背景（THEME_BLUR 的 MiBlur 视图模糊 / STATIC 的展开背景图）保持在下层：
@@ -3848,6 +3922,12 @@ class SystemUiBuiltinVolumePanel(
 
         private const val COLUMN_TRANSLATION_Z_DP = 20
         private const val POLL_INTERVAL_MILLIS = 750L
+
+        /** CONNECTING 期间的追帧间隔；比心跳快一个数量级，只为抹掉量化延迟。 */
+        private const val CONNECTING_RETRY_MILLIS = 60L
+
+        /** CONNECTING 追帧次数上限；超了就交还心跳，避免打爆 Provider。 */
+        private const val MAX_CONNECTING_RETRIES = 25
         private val EXPAND_INTERPOLATOR = PathInterpolator(0.2f, 0f, 0f, 1f)
         private val EXPANDED_PANEL_CONTENT_INSET_NAMES = arrayOf(
             // MiuiVolumeDialogRes.getBgWithContentPadding(context, true)

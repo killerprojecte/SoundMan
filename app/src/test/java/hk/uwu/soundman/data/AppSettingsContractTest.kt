@@ -1,8 +1,11 @@
 package hk.uwu.soundman.data
 
+import hk.uwu.soundman.model.EntryPosition
+import hk.uwu.soundman.model.PanelMaterial
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppSettingsContractTest {
@@ -51,6 +54,55 @@ class AppSettingsContractTest {
             settings.liquidGlassBlendColor,
         )
         assertEquals(0x20FFFFFF, AppSettingsDefaults.LIQUID_GLASS_BLEND_COLOR)
+        // 入口默认仍在音量条上方：新增档位不能改变既有用户的排布。
+        assertEquals(AppSettingsDefaults.ENTRY_POSITION, settings.entryPosition)
+        assertEquals(EntryPosition.DEFAULT, settings.entryPosition)
+        assertEquals(EntryPosition.ABOVE, settings.entryPosition)
+        // 播放门控默认开启：与音质音效官方入口一致，也是该判定首次发布时的行为。
+        assertEquals(
+            AppSettingsDefaults.ENTRY_PLAYBACK_ONLY_ENABLED,
+            settings.entryPlaybackOnlyEnabled,
+        )
+        assertTrue(settings.entryPlaybackOnlyEnabled)
+        // 面板玻璃默认跟随 HyperLight：与系统展开面板同一条链路。
+        assertEquals(
+            AppSettingsDefaults.HYPER_LIGHT_PANEL_GLASS_ENABLED,
+            settings.hyperLightPanelGlassEnabled,
+        )
+        assertTrue(settings.hyperLightPanelGlassEnabled)
+    }
+
+    /**
+     * 面板材质不落盘，是从两个既有开关推导出来的。
+     *
+     * 这样老用户升级后「跟随 HyperLight」或「自研玻璃」的选择不会被重置，
+     * 也不需要给跨进程镜像再搬一个新键。
+     */
+    @Test
+    fun panelMaterialIsDerivedFromTheTwoGlassSwitches() {
+        assertEquals(PanelMaterial.DEFAULT, AppSettings().panelMaterial)
+        assertEquals(PanelMaterial.HYPERLIGHT, AppSettings().panelMaterial)
+        // 两个开关同时为真时 HyperLight 优先：面板挂上它的玻璃后自研玻璃不会再叠加。
+        assertEquals(
+            PanelMaterial.HYPERLIGHT,
+            AppSettings(hyperLightPanelGlassEnabled = true, liquidGlassEnabled = true)
+                .panelMaterial,
+        )
+        assertEquals(
+            PanelMaterial.HYPERLIGHT,
+            AppSettings(hyperLightPanelGlassEnabled = true, liquidGlassEnabled = false)
+                .panelMaterial,
+        )
+        assertEquals(
+            PanelMaterial.LIQUID,
+            AppSettings(hyperLightPanelGlassEnabled = false, liquidGlassEnabled = true)
+                .panelMaterial,
+        )
+        assertEquals(
+            PanelMaterial.OFFICIAL,
+            AppSettings(hyperLightPanelGlassEnabled = false, liquidGlassEnabled = false)
+                .panelMaterial,
+        )
     }
 
     @Test
@@ -66,10 +118,14 @@ class AppSettingsContractTest {
                 "liquid_glass_refraction_enabled",
                 "liquid_glass_blur_radius",
                 "liquid_glass_blend_color",
+                "entry_position",
+                "entry_playback_only_enabled",
+                "entry_material",
+                "hyperlight_panel_glass_enabled",
             ),
             AppSettingsKeys.all,
         )
-        assertEquals(9, AppSettingsKeys.all.size)
+        assertEquals(13, AppSettingsKeys.all.size)
         assertNotEquals(AppSettingsKeys.SMOOTH_CORNERS, AppSettingsKeys.VOLUME_PERCENT)
         assertNotEquals(
             AppSettingsKeys.VOLUME_PERCENT,

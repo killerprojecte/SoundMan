@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,7 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import hk.uwu.soundman.miuix.basic.SButtonDefaults
 import hk.uwu.soundman.miuix.basic.SSlider
+import hk.uwu.soundman.miuix.basic.STextButton
 import hk.uwu.soundman.miuix.basic.sDrawCheckerboard
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -164,6 +167,76 @@ fun SettingActionItem(
                     fontSize = MiuixTheme.textStyles.body2.fontSize,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 设置项多选一组件：Card 内嵌标题/摘要与一排等宽分段按钮。
+ *
+ * 用于只有两三个候选值的设置（例如入口相对音量条的落位），
+ * 比下拉菜单少一层交互，也避免为两个选项再写一个弹窗列表。
+ *
+ * @param options 候选显示名，顺序即 [selectedIndex] 的下标顺序
+ * @param selectedIndex 当前选中项下标；越界时按未选中渲染
+ * @param onSelected 选中回调，参数为被点中的下标
+ */
+@Composable
+fun SettingChoiceItem(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    require(options.isNotEmpty()) { "SettingChoiceItem requires at least one option" }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val titleColor = if (enabled) MiuixTheme.colorScheme.onSurface
+            else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+            val summaryColor = if (enabled) MiuixTheme.colorScheme.onSurfaceVariantSummary
+            else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+
+            Text(
+                text = title,
+                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                fontWeight = FontWeight.Medium,
+                color = titleColor,
+            )
+            if (summary != null) {
+                Text(
+                    text = summary,
+                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = summaryColor,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                options.forEachIndexed { index, label ->
+                    STextButton(
+                        text = label,
+                        onClick = { onSelected(index) },
+                        modifier = Modifier.weight(1f),
+                        enabled = enabled,
+                        colors = if (index == selectedIndex) {
+                            SButtonDefaults.sPrimaryButtonColors()
+                        } else {
+                            SButtonDefaults.sTextButtonColors()
+                        },
+                    )
+                }
             }
         }
     }

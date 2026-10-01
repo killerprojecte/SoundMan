@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Settings
@@ -94,6 +95,9 @@ fun MainScreen(
 ) {
     var currentScreen by rememberSaveable { mutableStateOf("home") }
     var aboutIsRoot by rememberSaveable { mutableStateOf(true) }
+    // 设置页的二级路由（多应用音量按钮 / 面板）。提到 MainScreen 是因为标题与
+    // 返回键都在 TopBar 上，只有这里能同时改它们。
+    var settingsSubRoute by rememberSaveable { mutableStateOf<String?>(null) }
     var showMorePopup by remember { mutableStateOf(false) }
     val overScrollState = OverScrollState()
     val context = LocalContext.current
@@ -114,7 +118,17 @@ fun MainScreen(
             val hapticFeedback = LocalHapticFeedback.current
             val onTabSelect: (Int) -> Unit = { idx ->
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                // 离开设置页时收起二级页，否则下次切回来会直接落在子页里。
+                if (ScreenOrder[idx] != "settings") settingsSubRoute = null
                 currentScreen = ScreenOrder[idx]
+            }
+
+            // 二级页的返回交给 SettingsPage 里的 NavigationBackHandler：它要接住返回手势的
+            // 进度来做预测性返回动画，这里再挂一个普通 BackHandler 会把手势直接吃掉。
+
+            // 进出二级页时把大标题复位，否则从滚过的首页点进去会直接落进收起状态。
+            LaunchedEffect(settingsSubRoute) {
+                if (currentScreen == "settings") settingsScrollBehavior.state.heightOffset = 0f
             }
 
             val iconTint = MiuixTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.8f)
@@ -125,9 +139,17 @@ fun MainScreen(
                 stringResource(R.string.nav_about),
             )
 
-            val topBarTitle = when (currentScreen) {
-                "settings" -> stringResource(R.string.nav_settings)
-                else -> stringResource(R.string.app_name)
+            val inSettingsSubPage =
+                currentScreen == "settings" && settingsSubRoute != null
+            val topBarTitle = when {
+                currentScreen != "settings" -> stringResource(R.string.app_name)
+                settingsSubRoute == SettingsSubRoute.VOLUME_ENTRY ->
+                    stringResource(R.string.settings_volume_entry_title)
+
+                settingsSubRoute == SettingsSubRoute.VOLUME_PANEL ->
+                    stringResource(R.string.settings_volume_panel_title)
+
+                else -> stringResource(R.string.nav_settings)
             }
             val activeScrollBehavior = if (currentScreen == "settings") {
                 settingsScrollBehavior
@@ -267,6 +289,8 @@ fun MainScreen(
                                     paddingValues = paddingValues,
                                     scrollBehavior = settingsScrollBehavior,
                                     settingsStore = settingsStore,
+                                    subRoute = settingsSubRoute,
+                                    onSubRouteChange = { settingsSubRoute = it },
                                 )
                             }
 
@@ -292,6 +316,18 @@ fun MainScreen(
                             style = TopBarStyle.LargeGlass,
                             scrollBehavior = activeScrollBehavior,
                             backdrop = liquidGlassBackdrop,
+                            startAction = if (inSettingsSubPage) {
+                                { backdropAlpha, shadowAlpha ->
+                                    LiquidTopBarButton(
+                                        onClick = { settingsSubRoute = null },
+                                        backdrop = liquidGlassBackdrop,
+                                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = stringResource(R.string.settings_back),
+                                        backdropAlpha = backdropAlpha,
+                                        shadowAlpha = shadowAlpha,
+                                    )
+                                }
+                            } else null,
                             endAction = if (currentScreen == "home") {
                                 { backdropAlpha, shadowAlpha ->
                                     LiquidTopBarButton(

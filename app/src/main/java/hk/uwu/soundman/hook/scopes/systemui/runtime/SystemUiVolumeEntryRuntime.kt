@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Outline
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -26,8 +27,18 @@ import androidx.core.view.isVisible
 import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.kavaref.extension.toClassOrNull
 import hk.uwu.soundman.R
+import hk.uwu.soundman.data.PanelBridgePrewarm
+import hk.uwu.soundman.hook.scopes.systemui.hidden.ActiveMediaApp
+import hk.uwu.soundman.hook.scopes.systemui.hidden.HyperLightGlassBridge
+import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialComponentMaterial
 import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialRingerBlur
+import hk.uwu.soundman.hook.scopes.systemui.hidden.OfficialRingerClone
+import hk.uwu.soundman.hook.scopes.systemui.hidden.SystemUiPlaybackMonitor
+import hk.uwu.soundman.model.EntryMaterial
+import hk.uwu.soundman.model.EntryPosition
+import hk.uwu.soundman.model.MediaPresence
 import hk.uwu.soundman.overlay.OverlayOpenRequest
+import hk.uwu.soundman.overlay.SeededPlayback
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -44,8 +55,47 @@ class SystemUiVolumeEntryRuntime(
     private val liquidGlassRefractionEnabled: () -> Boolean = { false },
     private val liquidGlassBlurRadius: () -> Int = { 20 },
     private val liquidGlassBlendColor: () -> Int = { 0x20FFFFFF },
+    /**
+     * 入口圆钮相对音量条的落位。
+     *
+     * 每次插入都会重新读：用户在 SoundMan 里改位置后，下一次音量面板回调
+     * （`onAttachedToWindow` / `updateExpandedH` …）就会把既有入口迁到新的落位。
+     */
+    private val entryPosition: () -> EntryPosition = { EntryPosition.DEFAULT },
+    /**
+     * 当前正在播放的媒体应用；`null` 表示探测不可用（反射被拦、binder 抛错等）。
+     *
+     * 入口只在有媒体播放时显示，点击时又把同一份结果当作面板的种子带过去，
+     * 所以「按钮显示」和「面板里真的有应用」用的是同一个判定，不会对不上。
+     */
+    private val activeMediaApps: (Context) -> List<ActiveMediaApp>? = { null },
+    /**
+     * 「入口只在播放时出现」开关是否开启。
+     *
+     * 关掉后入口回到常驻行为：无论有没有播放都显示。读取失败时按开启处理，
+     * 与默认行为一致（用户没改过设置就是开启）。
+     */
+    private val entryPlaybackOnlyEnabled: () -> Boolean = { true },
+    /**
+     * 入口圆钮的材质来源。
+     *
+     * 默认 [EntryMaterial.HYPERLIGHT]：拿得到 HyperLight 就用它的液态玻璃，
+     * 拿不到自动退回自研玻璃（再退官方高光材质），不会让入口变成裸按钮。
+     */
+    private val entryMaterial: () -> EntryMaterial = { EntryMaterial.DEFAULT },
+    /**
+     * 内置面板是否跟随 HyperLight 的液态玻璃（系统展开面板同款）。
+     *
+     * 关掉后面板只走官方展开材质 + SoundMan 自研玻璃，与没有 HyperLight 时一致。
+     */
+    private val hyperLightPanelGlassEnabled: () -> Boolean = { true },
 ) {
     private val officialDismissHook = SystemUiOfficialDismissHookBridge(log)
+    private val hyperLightGlass = HyperLightGlassBridge(log)
+    private val playbackMonitor = SystemUiPlaybackMonitor(
+        onChange = ::onPlaybackConfigChanged,
+        log = { message, throwable -> log(Log.WARN, TAG, message, throwable) },
+    )
     private val builtinPanel = SystemUiBuiltinVolumePanel(
         log = log,
         hookDismiss = officialDismissHook::dismiss,
@@ -56,6 +106,12 @@ class SystemUiVolumeEntryRuntime(
         liquidGlassRefractionEnabled = liquidGlassRefractionEnabled,
         liquidGlassBlurRadius = liquidGlassBlurRadius,
         liquidGlassBlendColor = liquidGlassBlendColor,
+        hyperLightPanelGlass = { view, radius ->
+            hyperLightPanelGlassEnabled() &&
+                hyperLightGlass.available() &&
+                hyperLightGlass.liquidGlassEnabled() &&
+                hyperLightGlass.attachExpandedPanel(view, radius)
+        },
     )
     private val trackedEntries = ArrayList<TrackedEntry>()
     private val pendingInsertions = ArrayList<PendingInsertion>()
@@ -66,16 +122,19 @@ class SystemUiVolumeEntryRuntime(
     private val insertionsIdle = lifecycleLock.newCondition()
     private var activeInsertions = 0
     private var officialBlur: OfficialRingerBlur? = null
+    private var componentMaterial: OfficialComponentMaterial? = null
     private var pluginClassLoader: ClassLoader? = null
+    private val entryGlass = WeakHashMap<View, LiquidGlassPanelDrawable>()
 
     /**
      * 插件 ClassLoader 就绪后安装 live MiBlur 入口。
      *
-     * `MiBlurCompat` / `Util` 只在插件 ClassLoader 里。
+     * `MiBlurCompat` / `Util` / `miuix.*` 只在插件 ClassLoader 里。
      */
     fun attachPluginClassLoader(pluginClassLoader: ClassLoader) {
         this.pluginClassLoader = pluginClassLoader
         officialBlur = OfficialRingerBlur(pluginClassLoader, log)
+        componentMaterial = OfficialComponentMaterial(pluginClassLoader, log)
     }
 
     /** 缓存 hook 框架已捕获的官方 controller 及其公开 dismissH 入口。 */
@@ -119,6 +178,7 @@ class SystemUiVolumeEntryRuntime(
         return try {
             removeCenteringFollow(entry)
             removeDragFollow(entry)
+            forgetPlacement(entry)
             (entry.parent as? ViewGroup)?.removeView(entry)
             entry.setOnClickListener(null)
             clearVisuals(entry)
@@ -135,6 +195,13 @@ class SystemUiVolumeEntryRuntime(
         view.background = null
         view.outlineProvider = null
         view.clipToOutline = false
+        entryGlass.remove(view)?.let { glass ->
+            try {
+                glass.release()
+            } catch (throwable: Throwable) {
+                log(Log.ERROR, TAG, "Unable to release entry liquid glass", throwable)
+            }
+        }
         if (view is ImageView) {
             view.setImageDrawable(null)
         }
@@ -142,6 +209,95 @@ class SystemUiVolumeEntryRuntime(
             for (index in 0 until view.childCount) {
                 clearVisuals(view.getChildAt(index))
             }
+        }
+    }
+
+    /**
+     * 入口圆钮材质档位：玻璃优先，其次官方组件材质，最后 ringer chrome。
+     *
+     * 放实例方法是因为设置开关（[liquidGlassEnabled]）只在实例上，而插入逻辑在
+     * companion 里。
+     *
+     * 入口有没有玻璃由「按钮材质」一档决定：[EntryMaterial.LIQUID] 就是要自研玻璃，
+     * [EntryMaterial.HYPERLIGHT] 拿不到 HyperLight 时也会退回自研玻璃，
+     * 不再单独给入口留一个玻璃开关——那与材质档位互相冲突。
+     */
+    private fun chooseEntryMaterial(context: Context): EntryMaterialMode =
+        EntryMaterialPolicy.choose(
+            componentMaterialAvailable = componentMaterial?.available(context) == true,
+            liquidGlassEnabled = liquidGlassEnabled(),
+            entryMaterial = entryMaterial(),
+            // 光抓到 ClassLoader 不算数，还得它自己的液态玻璃是开着的。
+            hyperLightReady = hyperLightGlass.available() && hyperLightGlass.liquidGlassEnabled(),
+        )
+
+    /**
+     * 把 `View.setBackground` 的调用转给 HyperLight 桥接层。
+     *
+     * 这是拿到它那一份热 ClassLoader 的唯一途径——模块的类只活在 LSPosed 的
+     * `LspModuleClassLoader` 里，没法直接枚举，只能等它自己挂载时反查。
+     */
+    fun noteBackground(drawable: Drawable) {
+        runCatching { hyperLightGlass.noteBackground(drawable) }
+    }
+
+    private fun attachHyperLightGlass(chrome: View, radiusPx: Int): Boolean =
+        hyperLightGlass.attach(chrome, radiusPx.toFloat())
+
+    /**
+     * 读取用户选择的入口落位；读取失败时保持默认落位。
+     *
+     * 位置偏好再怎么脏也只是「按钮摆在上还是在下」，不值得为此丢掉整颗入口，
+     * 所以这里一律吞异常回退默认，和材质/玻璃开关同一个处理口径。
+     */
+    private fun readEntryPosition(): EntryPosition = try {
+        entryPosition()
+    } catch (throwable: Throwable) {
+        log(Log.ERROR, TAG, "Unable to read volume entry position; keeping default", throwable)
+        EntryPosition.DEFAULT
+    }
+
+    /**
+     * 入口圆钮液态玻璃的渲染配置。
+     *
+     * 与内置展开面板共用同一组用户参数，官方组件材质不可用（或用户没装 HyperLight
+     * 那类模块）时，入口靠它和展开面板保持同款观感。
+     */
+    private fun entryLiquidGlassConfig(): LiquidGlassPanelConfig? {
+        if (!liquidGlassEnabled()) return null
+        return LiquidGlassPanelConfig(
+            enabled = true,
+            trueRefraction = LiquidGlassPanelPolicy.refractionActive(
+                liquidGlassEnabled(),
+                liquidGlassRefractionEnabled(),
+            ),
+            captureBlurRadius = liquidGlassBlurRadius().toFloat().coerceIn(0f, 20f),
+            blendColor = liquidGlassBlendColor(),
+        )
+    }
+
+    /**
+     * 把液态玻璃叠在入口现有材质之上，和内置面板一样用 LayerDrawable 叠加而不是覆盖。
+     *
+     * 折射层不透明时视觉上替换下方材质，捕获失败则整层不绘制、露出官方材质兜底。
+     */
+    private fun attachEntryLiquidGlass(chrome: View, radiusPx: Int): Boolean {
+        val config = entryLiquidGlassConfig() ?: return false
+        return try {
+            val glass = LiquidGlassPanelDrawable(
+                context = chrome.context,
+                host = chrome,
+                initialConfig = config,
+                initialCornerRadius = radiusPx.toFloat(),
+                log = log,
+            )
+            val official = chrome.background
+            chrome.background = if (official != null) LayerDrawable(arrayOf(official, glass)) else glass
+            entryGlass[chrome] = glass
+            true
+        } catch (throwable: Throwable) {
+            log(Log.ERROR, TAG, "Entry liquid glass attach failed; keeping official material only", throwable)
+            false
         }
     }
 
@@ -222,11 +378,33 @@ class SystemUiVolumeEntryRuntime(
     }
 
     /**
+     * 把刚探测到的正在播放的应用打包成面板种子。
+     *
+     * 动机：面板进程要连宿主做一次握手才有列表，冷启动那几百毫秒里列表是空的。
+     * 侧栏为了决定「显示不显示入口」刚刚探测过一次，这份结果直接带过去当首帧占位，
+     * 用户点开立刻就能看到音量条，而不是先空一下再刷出来。
+     *
+     * 包名查不到（共享 uid 且无包）的应用没法画图标，直接丢掉：种子只是占位，
+     * 少一条不影响宿主快照到达后的真实列表。
+     */
+    private fun seededPlayback(context: Context): List<SeededPlayback> = try {
+        activeMediaApps(context)
+            ?.mapNotNull { app ->
+                val packageName = app.packageName?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                SeededPlayback(app.uid, packageName)
+            }
+            ?: emptyList()
+    } catch (throwable: Throwable) {
+        log(Log.WARN, TAG, "Unable to seed panel playback list; opening without it", throwable)
+        emptyList()
+    }
+
+    /**
      * 从 SystemUI/插件进程打开 SoundMan 面板，并关掉音量侧栏。
      */
     fun openOverlay(context: Context, trigger: String, sourceView: View) {
         if (closing.get()) return
-        val launch = OverlayOpenRequest.sidebarActivityLaunch()
+        val launch = OverlayOpenRequest.sidebarActivityLaunch(seededPlayback(context))
         val intent = Intent(launch.action)
             .setComponent(ComponentName(launch.packageName, launch.className))
             .addFlags(launch.flags)
@@ -301,7 +479,8 @@ class SystemUiVolumeEntryRuntime(
                     )
                     return@Runnable
                 }
-                entry.visibility = SystemUiVolumeEntryLayout.entryVisibility(expanded)
+                val presence = readPresence(root.context)
+                applyEntryVisibility(entry, expanded, presence, "expanded=$expanded")
             } catch (throwable: Throwable) {
                 log(Log.ERROR, TAG, "Volume expand update failed for expanded=$expanded", throwable)
             }
@@ -314,6 +493,89 @@ class SystemUiVolumeEntryRuntime(
     }
 
     private fun findInsertedEntry(root: View): View? = findExistingEntry(root)
+
+    /**
+     * 读取当前媒体播放判定；探测抛错时按 [MediaPresence.UNKNOWN] 处理。
+     *
+     * 动机：入口可见性是个「锦上添花」的判断，探测不可用不能连累入口本身 ——
+     * 藏掉入口等于让整个模块看起来失灵，多显示一颗按钮则只是多一个入口。
+     *
+     * 用户关掉「仅在播放时显示」后直接返回 [MediaPresence.UNKNOWN]：
+     * 该状态下的入口恒显示，等价于彻底跳过播放门控，不用在策略层再加分支。
+     */
+    private fun readPresence(context: Context): MediaPresence {
+        val gating = try {
+            entryPlaybackOnlyEnabled()
+        } catch (throwable: Throwable) {
+            log(
+                Log.WARN,
+                TAG,
+                "Unable to read entry playback-only setting; keeping playback gating on",
+                throwable,
+            )
+            true
+        }
+        if (!gating) return MediaPresence.UNKNOWN
+        return try {
+            MediaPresence.from(activeMediaApps(context))
+        } catch (throwable: Throwable) {
+            log(
+                Log.WARN,
+                TAG,
+                "Unable to probe active media playback; keeping volume entry visible",
+                throwable,
+            )
+            MediaPresence.UNKNOWN
+        }
+    }
+
+    /**
+     * 应用入口可见性并补一条诊断日志。
+     *
+     * 展开态要记进 [expandedStates]：播放回调刷新时没有官方的 timer_layout 可看，
+     * 只能靠上一次官方回调留下的展开态，不能因为刷新就把展开态的入口点亮。
+     */
+    private fun applyEntryVisibility(
+        entry: View,
+        expanded: Boolean,
+        presence: MediaPresence,
+        reason: String,
+    ) {
+        rememberExpanded(entry, expanded)
+        entry.visibility = EntryPresencePolicy.visibility(expanded, presence)
+        if (!EntryPresencePolicy.isVisible(expanded, presence)) {
+            log(
+                Log.INFO,
+                TAG,
+                "[systemui] volume entry hidden ($reason presence=$presence) view=${describeView(entry)}",
+                null,
+            )
+        }
+    }
+
+    /**
+     * 播放配置变化：面板停在屏幕上的时候，开始/停止播放也要重算入口可见性。
+     *
+     * 走每颗入口自己的 UI 线程；入口已经被回收就跳过。
+     */
+    private fun onPlaybackConfigChanged() {
+        val tracked = synchronized(trackedEntries) { ArrayList(trackedEntries) }
+        tracked.forEach { item ->
+            val entry = item.view.get() ?: return@forEach
+            val refresh = Runnable {
+                try {
+                    if (closing.get()) return@Runnable
+                    val presence = readPresence(entry.context)
+                    applyEntryVisibility(entry, expandedOf(entry), presence, "playback-callback")
+                } catch (throwable: Throwable) {
+                    log(Log.ERROR, TAG, "Playback presence refresh failed", throwable)
+                }
+            }
+            if (!entry.post(refresh)) {
+                log(Log.ERROR, TAG, "Playback presence refresh rejected by entry UI thread", null)
+            }
+        }
+    }
 
     fun scheduleInsertion(thisObject: Any?, trigger: String) {
         if (closing.get()) return
@@ -331,6 +593,11 @@ class SystemUiVolumeEntryRuntime(
             lastTriggerLogMillis,
             "[systemui] trigger=$trigger root=${describeView(root)} attached=${root.isAttachedToWindow}",
         )
+        // 面板一呼出会停在屏幕上好几秒，这段时间里的播放变化只有 AudioPlaybackCallback 能看到。
+        playbackMonitor.register(root.context)
+        // 侧栏已经出来了，用户还没点到按钮：趁这几百毫秒把面板要用的宿主握手跑完，
+        // 免得点开时面板先空一帧再刷出来。
+        prewarmPanelBridge(root)
         val uiLooper = root.handler?.looper ?: Looper.myLooper()
         if (uiLooper == null) {
             log(Log.ERROR, TAG, "Volume insertion skipped: trigger=$trigger has no UI Looper", null)
@@ -382,6 +649,7 @@ class SystemUiVolumeEntryRuntime(
                 return@Runnable
             }
             if (!beginInsertion()) return@Runnable
+            val position = readEntryPosition()
             try {
                 if (!closing.get() && !pending.cancelled.get()) {
                     insertEntry(
@@ -395,7 +663,13 @@ class SystemUiVolumeEntryRuntime(
                         ::cleanupEntryAndPanel,
                         ::openPanel,
                         officialBlur,
+                        componentMaterial,
+                        ::chooseEntryMaterial,
+                        ::attachEntryLiquidGlass,
+                        ::attachHyperLightGlass,
                         pluginClassLoader,
+                        position,
+                        ::readPresence,
                     )
                 }
             } catch (throwable: Throwable) {
@@ -426,6 +700,21 @@ class SystemUiVolumeEntryRuntime(
             null,
         )
         queueInsertionAttempt(pending)
+    }
+
+    /**
+     * 后台预热面板桥接；失败只是回到原来的等待，不能影响入口本身。
+     *
+     * @param root 侧栏根 View，用它的 context 解析模块 Provider
+     */
+    private fun prewarmPanelBridge(root: View) {
+        try {
+            PanelBridgePrewarm.warm(root.context) { message, error ->
+                log(Log.DEBUG, TAG, message, error)
+            }
+        } catch (throwable: Throwable) {
+            log(Log.WARN, TAG, "Unable to prewarm panel bridge", throwable)
+        }
     }
 
     private fun resolveAnchor(root: View): AnchorMatch? = findAnchorByResource(root)
@@ -854,9 +1143,10 @@ class SystemUiVolumeEntryRuntime(
                 }
                 return
             }
-            val entryMargin =
-                (entry.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
-            val extra = entry.measuredHeight + entryMargin
+            // 入口两侧的 margin 也算进额外高度：官方 gap 可能落在上边（下方落位）也可能落在下边（上方落位）。
+            val entryMargins = (entry.layoutParams as? ViewGroup.MarginLayoutParams)
+                ?.let { it.topMargin + it.bottomMargin } ?: 0
+            val extra = entry.measuredHeight + entryMargins
             val compensated = base - extra / 2
             follow.lastBase = base
             if (current != compensated) {
@@ -947,7 +1237,13 @@ class SystemUiVolumeEntryRuntime(
             cleanup: (View) -> Boolean,
             openOverlay: (Context, String, View) -> Unit,
             officialBlur: OfficialRingerBlur?,
+            componentMaterial: OfficialComponentMaterial?,
+            chooseMaterial: (Context) -> EntryMaterialMode,
+            attachLiquidGlass: (View, Int) -> Boolean,
+            attachHyperLightGlass: (View, Int) -> Boolean,
             pluginClassLoader: ClassLoader?,
+            position: EntryPosition,
+            presenceOf: (Context) -> MediaPresence,
         ) {
             if (isClosing()) return
             if (!anchor.isLaidOut || anchor.measuredWidth <= 0 || anchor.measuredHeight <= 0) {
@@ -978,8 +1274,25 @@ class SystemUiVolumeEntryRuntime(
                 log,
             )
             val metrics = resolveButtonMetrics(template, ::dp, dimenWidth, dimenHeight)
-            val gap = resolveOfficialGap(root, anchor, dp(SystemUiVolumeEntryLayout.MARGIN_VERTICAL_DP))
-            val placement = resolvePlacement(root, anchor, metrics, gap, log) ?: return
+            val hadEntry = findExistingEntry(root) != null
+            // 用户在面板还活着的时候改了落位：先把旧入口摘下来，
+            // 之后 indexOfChild(anchor) 才是干净的新落位下标。
+            detachMovedEntry(root, position, cleanup, log)
+            // 间距必须在「入口尚未插入」时才实测：入口一插进去，静音/免打扰与音量条
+            // 的实测距离就含入口自身，采信就会一次比一次大。注意 `removeView` 之后
+            // 兄弟视图的 top/bottom 仍是旧值，所以这里按「本轮开始时是否插过」判断。
+            val fallbackGapPx = dp(SystemUiVolumeEntryLayout.MARGIN_VERTICAL_DP)
+            val gapResolution = resolveOfficialGap(
+                ringerRoot = root,
+                volumeAnchor = anchor,
+                fallbackPx = fallbackGapPx,
+                entryPresent = hadEntry,
+                collapsed = !isExpanded(template.timerLayout),
+                // 间距再大也不会超过一整行的高度；用入口自身高度当上限，跟着 dpi 缩放。
+                maxPx = maxOf(fallbackGapPx, metrics.height),
+            )
+            val gap = gapResolution.px
+            val placement = resolvePlacement(root, anchor, metrics, gap, position, log) ?: return
             val dialogBound = resolveDialogBound(root)
             if (!isWithinBound(placement.parent, dialogBound)) {
                 failVisible(
@@ -1013,6 +1326,12 @@ class SystemUiVolumeEntryRuntime(
                         isClosing,
                         openOverlay,
                         officialBlur,
+                        componentMaterial,
+                        chooseMaterial,
+                        attachLiquidGlass,
+                        attachHyperLightGlass,
+                        pluginClassLoader,
+                        officialLayout = root,
                     )
                 ) {
                     return
@@ -1027,7 +1346,7 @@ class SystemUiVolumeEntryRuntime(
                         placement.index
                     }
                 placement.parent.addView(entry, insertIndex, placement.layoutParams)
-                applyInsertVisibility(entry, template.timerLayout, log)
+                applyInsertVisibility(entry, template.timerLayout, presenceOf, log)
                 if (!track(entry, uiLooper)) {
                     cleanup(entry)
                     return
@@ -1035,13 +1354,21 @@ class SystemUiVolumeEntryRuntime(
                 installDragFollow(entry, root, pluginClassLoader, log)
                 installCenteringFollow(entry, root, log)
                 entry.tag = ENTRY_TAG
+                appliedPositions[entry] = position
                 val action = if (existing === entry) "adopted" else "inserted"
+                val margins = placement.layoutParams as? ViewGroup.MarginLayoutParams
+                // 几何诊断：这些数字跨呼出周期必须稳定。若 anchorBounds / parentSize 逐次变大，
+                // 说明入口自身把容器撑大了，新一轮又按撑大后的锚点定位 —— 即漂移仍在。
                 log(
                     Log.INFO,
                     TAG,
                     "[systemui] $trigger $action SoundMan entry view=${describeInserted(entry)} " +
-                        "anchor=$anchorName parent=${placement.parent.javaClass.name} index=$insertIndex " +
-                        "size=${placement.layoutParams.width}x${placement.layoutParams.height}",
+                        "anchor=$anchorName position=$position parent=${placement.parent.javaClass.name} " +
+                        "index=$insertIndex gap=$gap/${gapResolution.source} " +
+                        "size=${placement.layoutParams.width}x${placement.layoutParams.height} " +
+                        "anchorBounds=[${anchor.top}..${anchor.bottom}] " +
+                        "parentSize=${placement.parent.width}x${placement.parent.height} " +
+                        "entryMargin=(top=${margins?.topMargin},bottom=${margins?.bottomMargin})",
                     null,
                 )
             } catch (throwable: Throwable) {
@@ -1058,6 +1385,54 @@ class SystemUiVolumeEntryRuntime(
         private fun describeInserted(view: View): String =
             "${view.javaClass.name}@${Integer.toHexString(System.identityHashCode(view))}"
 
+        /**
+         * 落位开关被改动后，把已经插好的入口从原来的父容器里摘下来。
+         *
+         * 动机：跨进程偏好是「写入即生效」的，但入口已经插在视图树里了，
+         * 光改 margin / 顺序不足以把它从音量条上方挪到下方——尤其是 FrameLayout 那种
+         * 绝对定位分支，必须重新算 topMargin。最省事也最稳的做法是整颗摘掉，
+         * 让后面的 [resolvePlacement] 按新落位重新插一遍。
+         *
+         * 只在「确实插过」且「落位真的变了」时动手，其余情况保持原样，
+         * 避免每次 `updateExpandedH` 都无意义地把入口来回挪。
+         */
+        private fun detachMovedEntry(
+            root: View,
+            position: EntryPosition,
+            cleanup: (View) -> Boolean,
+            log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
+        ) {
+            val existing = findExistingEntry(root) ?: return
+            val applied = appliedPositions[existing] ?: return
+            if (applied == position) return
+            log(
+                Log.INFO,
+                TAG,
+                "Moving SoundMan volume entry from $applied to $position",
+                null,
+            )
+            cleanup(existing)
+        }
+
+        /**
+         * 记住每颗已插入入口当时用的落位。
+         *
+         * 用 WeakHashMap：入口被官方视图树回收时不应该被这里吊住。
+         */
+        private val appliedPositions = WeakHashMap<View, EntryPosition>()
+
+        /**
+         * 每个 `MiuiRingerModeLayout` 上缓存的官方间距。
+         *
+         * 只存「入口尚未插入」时测到的值（见 [EntryPlacementPolicy.resolveGap]），
+         * 入口存在期间一律复用，避免把入口自身的高度反复算进官方间距里。
+         */
+        private val measuredGaps = WeakHashMap<View, Int>()
+
+        private fun forgetPlacement(entry: View) {
+            appliedPositions.remove(entry)
+        }
+
         private fun configureEntry(
             entry: FrameLayout,
             targetContext: Context,
@@ -1067,6 +1442,12 @@ class SystemUiVolumeEntryRuntime(
             isClosing: () -> Boolean,
             openOverlay: (Context, String, View) -> Unit,
             officialBlur: OfficialRingerBlur?,
+            componentMaterial: OfficialComponentMaterial?,
+            chooseMaterial: (Context) -> EntryMaterialMode,
+            attachLiquidGlass: (View, Int) -> Boolean,
+            attachHyperLightGlass: (View, Int) -> Boolean,
+            pluginClassLoader: ClassLoader?,
+            officialLayout: View?,
         ): Boolean {
             val iconDrawable = resolvePhoneIcon(targetContext, packages, log) ?: return false
             val radiusPx = resolveNamedDimenPx(
@@ -1109,6 +1490,66 @@ class SystemUiVolumeEntryRuntime(
             entry.contentDescription = contentDescription
             entry.tag = ENTRY_TAG
             val liveRadius = radiusPx ?: (fallbackWidth / 2)
+            val mode = chooseMaterial(targetContext)
+            // HYPERLIGHT 档优先走「官方按钮克隆」：inflate miui_ringer_mode_layout +
+            // 绑官方 RingerButtonHelper，让入口和铃铛/月亮走同一条官方材质链路。
+            // HyperLight 拦的就是这条链路 —— 克隆按钮会自动带上一整套玻璃效果
+            // （含描边/陀螺仪折射/触控辉光），这是手工调 zf0.l 拿不到的；
+            // HyperLight 没装时就是官方材质，观感仍然和铃铛月亮一致。
+            if (mode == EntryMaterialMode.HYPERLIGHT_GLASS) {
+                val openEntry = View.OnClickListener { clickedView ->
+                    if (isClosing()) return@OnClickListener
+                    openOverlay(clickedView.context, "click", clickedView)
+                }
+                val cloned = OfficialRingerClone.create(
+                    targetContext = targetContext,
+                    packages = packages,
+                    pluginClassLoader = pluginClassLoader,
+                    officialLayout = officialLayout,
+                    iconDrawable = iconDrawable,
+                    applyFallbackMaterial = { view ->
+                        runCatching {
+                            officialBlur?.applyCollapsedChrome(view, liveRadius)
+                        }.onFailure { throwable ->
+                            log(
+                                Log.INFO,
+                                TAG,
+                                "Official ringer clone fallback material failed",
+                                throwable,
+                            )
+                        }.getOrDefault(false) == true
+                    },
+                    onClick = openEntry,
+                    log = log,
+                )
+                if (cloned != null) {
+                    entry.removeAllViews()
+                    entry.addView(
+                        cloned,
+                        FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        ),
+                    )
+                    // bg_blur 已经在 clone 里被覆盖成同一个监听器；这里再给 root/entry
+                    // 兜一层，保证事件无论落在哪一层都只会打开 SoundMan 面板。
+                    cloned.setOnClickListener(openEntry)
+                    entry.setOnClickListener(openEntry)
+                    log(
+                        Log.INFO,
+                        TAG,
+                        "SoundMan entry uses cloned official ringer button; HyperLight glass follows the official path",
+                        null,
+                    )
+                    return true
+                }
+                log(
+                    Log.INFO,
+                    TAG,
+                    "Official ringer clone unavailable; falling back to manual HyperLight glass",
+                    null,
+                )
+            }
             val blurLayer = officialBlur?.createCollapsedBlurLayer(targetContext, liveRadius)
                 ?: View(targetContext)
             blurLayer.id = View.NO_ID
@@ -1135,18 +1576,43 @@ class SystemUiVolumeEntryRuntime(
                 "volume entry button background",
             )
             val themeBlur = officialBlur?.themeBlurOpened(targetContext)
-            val liveApplied = themeBlur != false && officialBlur != null &&
-                officialBlur.applyCollapsedChrome(chrome, liveRadius)
-            if (themeBlur == true && !liveApplied) {
+            val componentApplied = mode == EntryMaterialMode.COMPONENT &&
+                runCatching {
+                    componentMaterial?.apply(
+                        chrome,
+                        liveRadius,
+                        EntryMaterialPolicy.isNight(targetContext.resources.configuration.uiMode),
+                    ) == true
+                }.onFailure { throwable ->
+                    log(
+                        Log.INFO,
+                        TAG,
+                        "Official component material unavailable; falling back to ringer chrome",
+                        throwable,
+                    )
+                }.getOrDefault(false)
+            val liveApplied = if (componentApplied) {
+                false
+            } else {
+                themeBlur != false && officialBlur != null &&
+                    officialBlur.applyCollapsedChrome(chrome, liveRadius)
+            }
+            if (!componentApplied && themeBlur == true && !liveApplied) {
                 log(Log.ERROR, TAG, "Theme live blur is on but official chrome blend failed; skip insertion", null)
                 return false
             }
-            val newMaterial = liveApplied && officialBlur.usedNewMaterialChrome() == true
+            // 官方组件材质自带完整背景，和 ringer 的「新系统 material」一样不要再叠静态 blur。
+            val newMaterial = componentApplied ||
+                (liveApplied && officialBlur?.usedNewMaterialChrome() == true)
             blurLayer.background = if (newMaterial) null else blurBackground
-            if (liveApplied) {
-                chrome.background = null
-                if (newMaterial) {
-                    log(Log.INFO, TAG, "Applied official volume-column material chrome", null)
+            // HyperLight 的渲染器拿 view 当前 background 当底图；铃铛/月亮是官方 View，
+            // 本来就带着官方按钮底，我们若跟着置 null，玻璃就只剩一层"悬空"的折射，
+            // 观感自然对不上。所以这一档要把官方按钮底留在下面。
+            val keepGlassBase = mode == EntryMaterialMode.HYPERLIGHT_GLASS
+            if (componentApplied || liveApplied) {
+                chrome.background = if (keepGlassBase) buttonBackground else null
+                if (componentApplied) {
+                    log(Log.INFO, TAG, "Applied volume-column component material to SoundMan entry", null)
                 } else {
                     log(
                         Log.INFO,
@@ -1161,6 +1627,28 @@ class SystemUiVolumeEntryRuntime(
                     return false
                 }
                 chrome.background = buttonBackground
+            }
+            // HyperLight 的渲染器会把 view 当前 background 当 base 叠在自己下面，
+            // 所以必须等上面把 chrome.background 定完再挂；挂不上就退回自研玻璃。
+            val hyperLightApplied = mode == EntryMaterialMode.HYPERLIGHT_GLASS &&
+                !componentApplied &&
+                attachHyperLightGlass(chrome, liveRadius)
+            if (hyperLightApplied) {
+                log(
+                    Log.INFO,
+                    TAG,
+                    "Applied HyperLight liquid glass to SoundMan entry (base=${chrome.background != null})",
+                    null,
+                )
+            } else if (mode == EntryMaterialMode.HYPERLIGHT_GLASS && !componentApplied) {
+                log(Log.INFO, TAG, "HyperLight glass unavailable; falling back to own glass", null)
+            }
+            // 自研玻璃只在 LIQUID 档叠；HYPERLIGHT 档挂不上时兜底。
+            // RINGER / COMPONENT 档不叠，保持模块原本的观感。
+            val wantOwnGlass = mode == EntryMaterialMode.LIQUID_GLASS ||
+                (mode == EntryMaterialMode.HYPERLIGHT_GLASS && !hyperLightApplied)
+            if (!componentApplied && wantOwnGlass && attachLiquidGlass(chrome, liveRadius)) {
+                log(Log.INFO, TAG, "Applied builtin-panel liquid glass to SoundMan entry", null)
             }
             chrome.addView(createIconView(targetContext, template.icon, iconDrawable, iconSizePx))
             entry.addView(blurLayer)
@@ -1396,17 +1884,53 @@ class SystemUiVolumeEntryRuntime(
             return null
         }
 
+        /**
+         * 面板是否展开：DND 的 timer 行可见即展开。
+         *
+         * 与 [applyInsertVisibility] 共用同一判定，避免两处对「展开」的理解漂移。
+         */
+        private fun isExpanded(timerLayout: View?): Boolean =
+            timerLayout != null && timerLayout.isVisible
+
         private fun applyInsertVisibility(
             entry: View,
             timerLayout: View?,
+            presenceOf: (Context) -> MediaPresence,
             log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
         ) {
-            val expanded = timerLayout != null && timerLayout.isVisible
-            entry.visibility = SystemUiVolumeEntryLayout.entryVisibility(expanded)
-            if (expanded) {
-                log(Log.INFO, TAG, "Volume entry hidden because DND timer_layout is already visible", null)
+            val expanded = isExpanded(timerLayout)
+            rememberExpanded(entry, expanded)
+            val presence = presenceOf(entry.context)
+            entry.visibility = EntryPresencePolicy.visibility(expanded, presence)
+            when {
+                expanded -> log(
+                    Log.INFO,
+                    TAG,
+                    "Volume entry hidden because DND timer_layout is already visible",
+                    null,
+                )
+                presence.hidesEntry -> log(
+                    Log.INFO,
+                    TAG,
+                    "Volume entry hidden because no media app is playing (presence=$presence)",
+                    null,
+                )
             }
         }
+
+        /**
+         * 每颗入口最近一次官方展开态。
+         *
+         * 播放回调刷新可见性时手上没有官方 `timer_layout`，只能沿用上一次
+         * `updateExpandedH` / 插入时的展开态；弱引用跟着入口一起回收。
+         */
+        private val expandedStates = WeakHashMap<View, Boolean>()
+
+        private fun rememberExpanded(entry: View, expanded: Boolean) {
+            expandedStates[entry] = expanded
+        }
+
+        private fun expandedOf(entry: View): Boolean = expandedStates[entry] ?: false
 
         private fun copyMetrics(
             sizeSource: View,
@@ -1457,6 +1981,7 @@ class SystemUiVolumeEntryRuntime(
             anchor: View,
             metrics: CopiedMetrics,
             gap: Int,
+            position: EntryPosition,
             log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
         ): EntryPlacement? {
             val parent = anchor.parent as? ViewGroup
@@ -1475,7 +2000,7 @@ class SystemUiVolumeEntryRuntime(
             val entryWidth = alignEntryWidth(anchor)
             return when (parent) {
                 is LinearLayout -> when (parent.orientation) {
-                    LinearLayout.VERTICAL -> verticalPlacement(parent, anchor, metrics, entryWidth, gap)
+                    LinearLayout.VERTICAL -> verticalPlacement(parent, anchor, metrics, entryWidth, gap, position)
                     LinearLayout.HORIZONTAL -> outerVerticalPlacement(
                         root,
                         parent,
@@ -1483,12 +2008,13 @@ class SystemUiVolumeEntryRuntime(
                         metrics,
                         entryWidth,
                         gap,
+                        position,
                         log,
                         "horizontal LinearLayout",
                     )
                     else -> failVisible(parent, log, "LinearLayout has unsupported orientation")
                 }
-                is FrameLayout -> framePlacement(parent, anchor, metrics, entryWidth, gap)
+                is FrameLayout -> framePlacement(parent, anchor, metrics, entryWidth, gap, position)
                     ?: outerVerticalPlacement(
                         root,
                         parent,
@@ -1496,26 +2022,32 @@ class SystemUiVolumeEntryRuntime(
                         metrics,
                         entryWidth,
                         gap,
+                        position,
                         log,
-                        "FrameLayout cannot place entry above volume column",
+                        "FrameLayout cannot place entry $position volume column",
                     )
+                    ?: clampedFramePlacement(parent, metrics, entryWidth, gap)
                 else -> failVisible(parent, log, "unsupported volume column parent")
             }
         }
 
         private fun verticalPlacement(
             parent: LinearLayout,
-            insertBefore: View,
+            insertBeside: View,
             metrics: CopiedMetrics,
             entryWidth: Int,
             gap: Int,
+            position: EntryPosition,
         ): EntryPlacement {
+            val margins = EntryPlacementPolicy.verticalMargins(gap, position)
             val params = LinearLayout.LayoutParams(entryWidth, metrics.height).apply {
                 weight = 0f
-                gravity = volumeRowGravity(insertBefore)
-                setMargins(0, 0, 0, gap)
+                gravity = volumeRowGravity(insertBeside)
+                setMargins(0, margins.top, 0, margins.bottom)
             }
-            return EntryPlacement(parent, parent.indexOfChild(insertBefore), params)
+            val anchorIndex = parent.indexOfChild(insertBeside)
+            val index = EntryPlacementPolicy.insertIndex(anchorIndex, position)
+            return EntryPlacement(parent, index, params)
         }
 
         private fun outerVerticalPlacement(
@@ -1525,6 +2057,7 @@ class SystemUiVolumeEntryRuntime(
             metrics: CopiedMetrics,
             entryWidth: Int,
             gap: Int,
+            position: EntryPosition,
             log: (priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit,
             reason: String,
         ): EntryPlacement? {
@@ -1533,7 +2066,14 @@ class SystemUiVolumeEntryRuntime(
             var ancestor = originalParent.parent
             while (ancestor is ViewGroup && isWithinBound(ancestor, dialogBound)) {
                 if (ancestor is LinearLayout && ancestor.orientation == LinearLayout.VERTICAL) {
-                    return verticalPlacement(ancestor, row, metrics, alignEntryWidth(row), gap)
+                    return verticalPlacement(
+                        ancestor,
+                        row,
+                        metrics,
+                        alignEntryWidth(row),
+                        gap,
+                        position,
+                    )
                 }
                 if (ancestor === dialogBound) break
                 row = ancestor
@@ -1614,24 +2154,59 @@ class SystemUiVolumeEntryRuntime(
             )
         }
 
-        private fun resolveOfficialGap(ringerRoot: View, volumeAnchor: View, fallbackPx: Int): Int {
-            val ringerMargin = (ringerRoot.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0
-            if (ringerMargin > 0) return ringerMargin
-            val volumeMargin = (volumeAnchor.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
-            if (volumeMargin > 0) return volumeMargin
-            if (ringerRoot.isLaidOut && volumeAnchor.isLaidOut) {
-                if (ringerRoot.parent === volumeAnchor.parent) {
-                    return kotlin.math.abs(ringerRoot.top - volumeAnchor.bottom)
-                }
-                if (ringerRoot.isAttachedToWindow && volumeAnchor.isAttachedToWindow) {
-                    val ringerLoc = IntArray(2)
-                    val volumeLoc = IntArray(2)
-                    ringerRoot.getLocationOnScreen(ringerLoc)
-                    volumeAnchor.getLocationOnScreen(volumeLoc)
-                    return kotlin.math.abs(ringerLoc[1] - (volumeLoc[1] + volumeAnchor.height))
-                }
+        /**
+         * 官方「音量条 ↔ 静音/免打扰」之间的间距。
+         *
+         * ⚠️ 实测值**只能在入口还没插进去时采信**：入口一旦插入就会把这一对视图撑开，
+         * 再实测得到的是「入口高度 + 上一轮间距」，会被下一轮继续放大 ——
+         * 表现就是每呼出一次音量条，入口连带静音/免打扰按钮离音量条主体远一截。
+         * 取值顺序与缓存策略见 [EntryPlacementPolicy.resolveGap]。
+         *
+         * @param entryPresent 入口此刻是否已插在视图树里
+         * @param collapsed 面板是否折叠；展开态量出来的间距不适用于折叠态
+         * @param maxPx 实测值的合理上限
+         */
+        private fun resolveOfficialGap(
+            ringerRoot: View,
+            volumeAnchor: View,
+            fallbackPx: Int,
+            entryPresent: Boolean,
+            collapsed: Boolean,
+            maxPx: Int,
+        ): OfficialGapResolution {
+            val ringerMargin =
+                (ringerRoot.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0
+            val volumeMargin =
+                (volumeAnchor.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+            val resolution = EntryPlacementPolicy.resolveGap(
+                officialMargin = if (ringerMargin > 0) ringerMargin else volumeMargin,
+                cached = measuredGaps[ringerRoot],
+                measured = measureGap(ringerRoot, volumeAnchor),
+                entryPresent = entryPresent,
+                collapsed = collapsed,
+                fallback = fallbackPx,
+                maxPx = maxPx,
+            )
+            if (resolution.cacheable) {
+                measuredGaps[ringerRoot] = resolution.px
             }
-            return fallbackPx
+            return resolution
+        }
+
+        /** 实测静音/免打扰与音量条之间的距离；布局未完成时返回 null。 */
+        private fun measureGap(ringerRoot: View, volumeAnchor: View): Int? {
+            if (!ringerRoot.isLaidOut || !volumeAnchor.isLaidOut) return null
+            if (ringerRoot.parent === volumeAnchor.parent) {
+                return kotlin.math.abs(ringerRoot.top - volumeAnchor.bottom)
+            }
+            if (ringerRoot.isAttachedToWindow && volumeAnchor.isAttachedToWindow) {
+                val ringerLoc = IntArray(2)
+                val volumeLoc = IntArray(2)
+                ringerRoot.getLocationOnScreen(ringerLoc)
+                volumeAnchor.getLocationOnScreen(volumeLoc)
+                return kotlin.math.abs(ringerLoc[1] - (volumeLoc[1] + volumeAnchor.height))
+            }
+            return null
         }
 
         private fun alignEntryWidth(volumeAnchor: View): Int {
@@ -1661,14 +2236,51 @@ class SystemUiVolumeEntryRuntime(
             metrics: CopiedMetrics,
             entryWidth: Int,
             gap: Int,
+            position: EntryPosition,
         ): EntryPlacement? {
-            val topMargin = anchor.top - gap - metrics.height
+            val topMargin = EntryPlacementPolicy.frameTopMargin(
+                anchorTop = anchor.top,
+                anchorBottom = anchor.bottom,
+                entryHeight = metrics.height,
+                gap = gap,
+                position = position,
+            )
             if (topMargin < 0) return null
+            // 放不下就别硬放：绝对定位一旦超出父容器，wrap_content 父容器会被撑高，
+            // 而 MATCH_PARENT 的锚点会跟着变高，下一轮按 anchor.bottom 定位又会更往下
+            // （实测每轮 +（入口高+间距））。交给 outerVerticalPlacement 插成一整行。
+            if (!EntryPlacementPolicy.fitsInsideParent(topMargin, metrics.height, parent.height)) {
+                return null
+            }
             val params = FrameLayout.LayoutParams(entryWidth, metrics.height).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 this.topMargin = topMargin
             }
             return EntryPlacement(parent, parent.indexOfChild(anchor), params)
+        }
+
+        /**
+         * 兜底落位：既放不进父容器、又找不到外层纵向容器时，贴着父容器底部放。
+         *
+         * 宁可和官方按钮重叠，也绝不能把父容器撑高（那会逐轮累加），更不能干脆不插。
+         *
+         * @param parent 音量条锚点的直接父容器
+         * @param metrics 入口尺寸
+         * @param entryWidth 入口宽度
+         * @param gap 官方间距，用作离底边的留白
+         */
+        private fun clampedFramePlacement(
+            parent: FrameLayout,
+            metrics: CopiedMetrics,
+            entryWidth: Int,
+            gap: Int,
+        ): EntryPlacement {
+            val topMargin = (parent.height - metrics.height - gap).coerceAtLeast(0)
+            val params = FrameLayout.LayoutParams(entryWidth, metrics.height).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                this.topMargin = topMargin
+            }
+            return EntryPlacement(parent, parent.childCount, params)
         }
 
         private fun failVisible(
